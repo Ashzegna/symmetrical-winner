@@ -60,6 +60,9 @@
   @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
   ol.plan { margin: 6px 0 0; padding-left: 22px; }
   ol.plan li { margin: 6px 0; }
+  .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+  .topbar h1 { margin-bottom: 0; }
+  .topbar-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 4px; }
   .hist-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; cursor: pointer; }
   .hist-row:hover, .hist-row.active { background: var(--accent-soft); }
   .hist-row + .hist-row { border-top: 1px solid #EAF0EF; }
@@ -73,8 +76,20 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">КИТ · Управление компетенциями и технологиями</div>
-  <h1>Разборщик продукта</h1>
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">КИТ · Управление компетенциями и технологиями</div>
+      <h1>Разборщик продукта</h1>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn ghost" id="histToggleBtn" style="display:none;">История</button>
+      <button class="btn" id="newBtn">Новый разбор</button>
+    </div>
+  </div>
+
+  <div id="historyBlock" style="display:none;">
+    <div class="card" style="padding: 8px 10px;" id="historyList"></div>
+  </div>
 
   <div class="card" id="keyCard" style="display:none;">
     <h2>Ключ API</h2>
@@ -98,11 +113,6 @@
     <div class="keyline" id="keyLine" style="display:none;">Ключ API сохранён в браузере. <a id="changeKey">Сменить ключ</a></div>
   </div>
 
-  <div id="historyBlock" style="display:none;">
-    <div class="section-title">История разборов</div>
-    <div class="card" style="padding: 8px 10px;" id="historyList"></div>
-  </div>
-
   <div class="hyp" id="hypBanner"><b>Все выводы ниже — гипотезы.</b> Их проверяют эксперты Центра НИОКР и живая база технологий: подтверждают источники, уточняют состав узлов, подбирают классы ПКИ. Конкретные поставщики и парт-номера на этом шаге не выбираются.</div>
 
   <div id="result">
@@ -112,10 +122,7 @@
           <div class="eyebrow" id="rProductEyebrow">Разбор изделия</div>
           <h2 id="rProduct" style="margin-top:4px;"></h2>
         </div>
-        <div class="row" style="margin-top:0;">
-          <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
-          <button class="btn" id="newBtn">Новый разбор</button>
-        </div>
+        <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
       </div>
       <p id="rSummary" style="margin: 8px 0 0;"></p>
     </div>
@@ -503,11 +510,21 @@ function addToHistory(data) {
   renderHistory();
 }
 
+let histOpen = false;
+
+el("histToggleBtn").addEventListener("click", () => {
+  histOpen = !histOpen;
+  renderHistory();
+});
+
 function renderHistory() {
   const list = loadHistory();
   const block = el("historyBlock");
   const box = el("historyList");
-  if (!list.length) { block.style.display = "none"; return; }
+  const toggle = el("histToggleBtn");
+  toggle.style.display = list.length ? "inline-flex" : "none";
+  toggle.textContent = "История (" + list.length + ")";
+  if (!list.length || !histOpen) { block.style.display = "none"; return; }
   box.innerHTML = "";
   list.forEach(entry => {
     const row = document.createElement("div");
