@@ -69,6 +69,12 @@
   .g-bar { position: absolute; top: 0; height: 100%; border-radius: 5px; min-width: 6px; }
   .rm-table-wrap { overflow-x: auto; margin-top: 14px; }
   .rm-table-wrap table { min-width: 640px; }
+  tr.rm-split td { color: var(--muted); font-size: 12.5px; padding-top: 2px; }
+  .rm-spec { border-top: 1px solid #EAF0EF; padding: 9px 0; }
+  .rm-spec:first-child { border-top: none; padding-top: 4px; }
+  .rm-spec .t { font-weight: 600; font-size: 14.5px; }
+  .rm-spec .s { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .rm-spec .k { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--accent); margin-top: 3px; }
   .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
   .topbar h1 { margin-bottom: 0; }
   .topbar-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 4px; }
@@ -174,6 +180,11 @@
             <tbody id="rmTableBody"></tbody>
           </table>
         </div>
+        <div class="row"><button class="btn ghost" id="xlsxBtn">Скачать в Excel</button></div>
+      </div>
+      <div class="card" id="rmTeamCard" style="display:none;">
+        <h2 style="font-size:17px;">Команда · рекомендация под замену реальными людьми</h2>
+        <div id="rmTeam"></div>
       </div>
       <div class="card">
         <div class="two-col">
@@ -258,8 +269,9 @@ const ROADMAP_PROMPT = `Ты — руководитель проектов Уп�
 1. Работа делится на циклы длиной не более 8 недель. Каждый цикл заканчивается ощутимым предъявляемым результатом — тем, что можно показать на ежемесячном смотре: работающий макет, закрытый контур функций, пилот у пользователей. Сложное изделие — несколько циклов подряд; под срок режется состав цикла, а не срок под состав.
 2. Поток: подготовка (ТЗ на изделие, назначение PM, сведение исполнителей — ДЗО, подрядчики; недели, не месяцы) → циклы сборки → пилотная эксплуатация → итерации и локализация узлов → упаковка и вывод на рынок → жизнь продукта (поставки, поддержка).
 3. Каждому этапу назначь ответственную роль из состава КИТ: PM изделия, системный аналитик, архитектор, руководитель проекта, Центр НИОКР, команды ДЗО и подрядчики, сервис упаковки, ИТ-блок банка.
-4. Сроки — нормативные гипотезы, а не обязательства: их уточняет руководитель проекта по реальным мощностям исполнителей. Допущения фиксируй явно.
-5. Этапы могут идти параллельно, если их исполнители разные. Пиши профессиональным деловым русским языком, без метафор.`;
+4. Исполнителей указывай предметно — как рекомендацию по составу команды: конкретные специальности с ключевыми навыками и технологическим стеком (например: «инженер-программист обработки сигналов — Python/C++, DSP», «инженер-схемотехник СВЧ-трактов»). Сведи их в единый список команды (обычно 5–10 специалистов, без раздувания — один специалист закрывает смежные работы) и разбей работу каждого этапа по этим специалистам. Это драфт под замену реальными людьми с их компетенциями.
+5. Сроки — нормативные гипотезы, а не обязательства: их уточняет руководитель проекта по реальным мощностям исполнителей. Допущения фиксируй явно.
+6. Этапы могут идти параллельно, если их исполнители разные. Пиши профессиональным деловым русским языком, без метафор.`;
 
 const ROADMAP_SCHEMA = {
   type: "object",
@@ -276,11 +288,38 @@ const ROADMAP_SCHEMA = {
           type: { type: "string", enum: ["prep", "cycle", "pilot", "packaging", "life"], description: "prep — подготовка и сведение; cycle — цикл сборки; pilot — пилотная эксплуатация; packaging — упаковка и вывод на рынок; life — жизнь продукта" },
           start_week: { type: "integer", description: "Неделя начала, с 1" },
           weeks: { type: "integer", description: "Длительность в неделях; для cycle — не более 8" },
-          owner: { type: "string", description: "Ответственная роль" },
+          owner: { type: "string", description: "Ответственная роль КИТ" },
           result: { type: "string", description: "Ощутимый результат этапа, одно предложение" },
-          review: { type: "string", description: "Что предъявляется на смотре по итогам этапа" }
+          review: { type: "string", description: "Что предъявляется на смотре по итогам этапа" },
+          work_split: {
+            type: "array",
+            description: "Разбивка работы этапа по специалистам из списка team; может быть пустой",
+            items: {
+              type: "object",
+              properties: {
+                specialist: { type: "string", description: "Специальность из списка team, дословно" },
+                work: { type: "string", description: "Что именно делает на этом этапе, одно предложение" }
+              },
+              required: ["specialist", "work"],
+              additionalProperties: false
+            }
+          }
         },
-        required: ["name", "type", "start_week", "weeks", "owner", "result", "review"],
+        required: ["name", "type", "start_week", "weeks", "owner", "result", "review", "work_split"],
+        additionalProperties: false
+      }
+    },
+    team: {
+      type: "array",
+      description: "Рекомендуемый состав команды: конкретные специальности",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Специальность, например «инженер-программист обработки сигналов»" },
+          skills: { type: "array", items: { type: "string" }, description: "Ключевые навыки, 2–4 пункта" },
+          stack: { type: "string", description: "Технологический стек через запятую" }
+        },
+        required: ["title", "skills", "stack"],
         additionalProperties: false
       }
     },
@@ -288,7 +327,7 @@ const ROADMAP_SCHEMA = {
     risks: { type: "array", items: { type: "string" }, description: "Главные риски с мерой реагирования, по одному предложению" },
     assumptions: { type: "array", items: { type: "string" }, description: "Допущения, на которых держатся сроки" }
   },
-  required: ["horizon_weeks", "summary", "phases", "next_cycles", "risks", "assumptions"],
+  required: ["horizon_weeks", "summary", "phases", "team", "next_cycles", "risks", "assumptions"],
   additionalProperties: false
 };
 
@@ -786,7 +825,33 @@ function renderRoadmap(rm, scroll) {
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
+    if (Array.isArray(ph.work_split) && ph.work_split.length) {
+      const trs = document.createElement("tr");
+      trs.className = "rm-split";
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = ph.work_split.map(w => (w.specialist || "") + " — " + (w.work || "")).join(" · ");
+      trs.appendChild(td);
+      tbody.appendChild(trs);
+    }
   });
+
+  const teamBox = el("rmTeam");
+  teamBox.innerHTML = "";
+  if (Array.isArray(rm.team) && rm.team.length) {
+    rm.team.forEach(sp => {
+      const d = document.createElement("div");
+      d.className = "rm-spec";
+      const t = document.createElement("div"); t.className = "t"; t.textContent = sp.title || "";
+      const s = document.createElement("div"); s.className = "s"; s.textContent = "Навыки: " + (Array.isArray(sp.skills) ? sp.skills.join(", ") : "");
+      const k = document.createElement("div"); k.className = "k"; k.textContent = sp.stack || "";
+      d.append(t, s, k);
+      teamBox.appendChild(d);
+    });
+    el("rmTeamCard").style.display = "block";
+  } else {
+    el("rmTeamCard").style.display = "none";
+  }
 
   fillList("rmRisks", rm.risks);
   fillList("rmAssumptions", rm.assumptions);
@@ -794,6 +859,65 @@ function renderRoadmap(rm, scroll) {
 
   el("roadmap").style.display = "block";
   if (scroll !== false) el("roadmap").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+const PHASE_TYPE_LABEL = { prep: "Подготовка", cycle: "Цикл", pilot: "Пилот", packaging: "Упаковка", life: "Жизнь" };
+
+el("xlsxBtn").addEventListener("click", downloadXlsx);
+
+function ensureXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("Не удалось загрузить модуль Excel — проверьте интернет и повторите."));
+    document.head.appendChild(s);
+  });
+}
+
+async function downloadXlsx() {
+  if (!lastRoadmap) return;
+  const rm = lastRoadmap;
+  try {
+    await ensureXLSX();
+    const wb = XLSX.utils.book_new();
+
+    const grafik = [["№", "Этап", "Тип", "Нед. начала", "Недель", "Нед. окончания", "Ответственный", "Результат", "На смотре", "Разбивка работ"]];
+    (rm.phases || []).forEach((ph, i) => {
+      const from = Math.max(1, ph.start_week || 1);
+      const len = Math.max(1, ph.weeks || 1);
+      grafik.push([
+        i + 1, ph.name || "", PHASE_TYPE_LABEL[ph.type] || ph.type || "", from, len, from + len - 1,
+        ph.owner || "", ph.result || "", ph.review || "",
+        (ph.work_split || []).map(w => (w.specialist || "") + " — " + (w.work || "")).join("; ")
+      ]);
+    });
+    const ws1 = XLSX.utils.aoa_to_sheet(grafik);
+    ws1["!cols"] = [{ wch: 4 }, { wch: 36 }, { wch: 11 }, { wch: 11 }, { wch: 8 }, { wch: 13 }, { wch: 26 }, { wch: 48 }, { wch: 48 }, { wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "График");
+
+    const team = [["Специалист", "Ключевые навыки", "Стек"]];
+    (rm.team || []).forEach(sp => team.push([sp.title || "", Array.isArray(sp.skills) ? sp.skills.join(", ") : "", sp.stack || ""]));
+    const ws2 = XLSX.utils.aoa_to_sheet(team);
+    ws2["!cols"] = [{ wch: 40 }, { wch: 60 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Команда");
+
+    const extra = [["Оценка"], [rm.summary || ""], [], ["Риски"]];
+    (rm.risks || []).forEach(t => extra.push([t]));
+    extra.push([], ["Допущения"]);
+    (rm.assumptions || []).forEach(t => extra.push([t]));
+    extra.push([], ["Следующие циклы"]);
+    (rm.next_cycles || []).forEach(t => extra.push([t]));
+    const ws3 = XLSX.utils.aoa_to_sheet(extra);
+    ws3["!cols"] = [{ wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "Оценка и риски");
+
+    const product = (lastData && lastData.product ? lastData.product : "продукт").replace(/[\\/:*?"<>|]/g, " ").slice(0, 60).trim();
+    XLSX.writeFile(wb, "Дорожная карта — " + product + ".xlsx");
+  } catch (e) {
+    showError(e.message || String(e));
+  }
 }
 
 function li(text) { const n = document.createElement("li"); n.textContent = text; return n; }
@@ -912,8 +1036,17 @@ el("copyBtn").addEventListener("click", async () => {
     (rm.phases || []).forEach(ph => {
       const from = Math.max(1, ph.start_week || 1);
       const to = from + Math.max(1, ph.weeks || 1) - 1;
-      L.push("- Недели " + from + "–" + to + " · " + ph.name + " (" + (ph.owner || "") + "). Результат: " + (ph.result || "") + " На смотре: " + (ph.review || ""));
+      let line = "- Недели " + from + "–" + to + " · " + ph.name + " (" + (ph.owner || "") + "). Результат: " + (ph.result || "") + " На смотре: " + (ph.review || "");
+      if (Array.isArray(ph.work_split) && ph.work_split.length) {
+        line += " Разбивка: " + ph.work_split.map(w => (w.specialist || "") + " — " + (w.work || "")).join("; ") + ".";
+      }
+      L.push(line);
     });
+    if (Array.isArray(rm.team) && rm.team.length) {
+      L.push("");
+      L.push("Команда (рекомендация):");
+      rm.team.forEach(sp => L.push("- " + (sp.title || "") + ". Навыки: " + (Array.isArray(sp.skills) ? sp.skills.join(", ") : "") + ". Стек: " + (sp.stack || "")));
+    }
     L.push("");
     L.push("Следующие циклы:");
     (rm.next_cycles || []).forEach(t => L.push("- " + t));
