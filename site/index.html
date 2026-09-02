@@ -60,7 +60,13 @@
   @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
   ol.plan { margin: 6px 0 0; padding-left: 22px; }
   ol.plan li { margin: 6px 0; }
-  .footer { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 12.5px; color: var(--muted); }
+  .hist-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; cursor: pointer; }
+  .hist-row:hover, .hist-row.active { background: var(--accent-soft); }
+  .hist-row + .hist-row { border-top: 1px solid #EAF0EF; }
+  .hist-name { flex: 1 1 auto; font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-date { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+  .hist-del { flex-shrink: 0; border: none; background: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 4px 6px; border-radius: 6px; font-family: inherit; }
+  .hist-del:hover { color: #B3552F; background: #FBEFE9; }
   #result { display: none; }
   #resultHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 </style>
@@ -92,6 +98,11 @@
     <div class="keyline" id="keyLine" style="display:none;">Ключ API сохранён в браузере. <a id="changeKey">Сменить ключ</a></div>
   </div>
 
+  <div id="historyBlock" style="display:none;">
+    <div class="section-title">История разборов</div>
+    <div class="card" style="padding: 8px 10px;" id="historyList"></div>
+  </div>
+
   <div class="hyp" id="hypBanner"><b>Все выводы ниже — гипотезы.</b> Их проверяют эксперты Центра НИОКР и живая база технологий: подтверждают источники, уточняют состав узлов, подбирают классы ПКИ. Конкретные поставщики и парт-номера на этом шаге не выбираются.</div>
 
   <div id="result">
@@ -101,7 +112,10 @@
           <div class="eyebrow" id="rProductEyebrow">Разбор изделия</div>
           <h2 id="rProduct" style="margin-top:4px;"></h2>
         </div>
-        <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
+        <div class="row" style="margin-top:0;">
+          <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
+          <button class="btn" id="newBtn">Новый разбор</button>
+        </div>
       </div>
       <p id="rSummary" style="margin: 8px 0 0;"></p>
     </div>
@@ -393,6 +407,7 @@ async function run() {
     if (hasLink) {
       const data = await runWithLink(apiKey, userText);
       render(data);
+      addToHistory(data);
       setStatus("Готово.");
       return;
     }
@@ -448,6 +463,7 @@ async function run() {
 
     const data = JSON.parse(jsonText);
     render(data);
+    addToHistory(data);
     setStatus("Готово.");
   } catch (e) {
     if (e.name === "AbortError") setStatus("Остановлено.");
@@ -460,6 +476,81 @@ async function run() {
 }
 
 let lastData = null;
+let activeHistId = null;
+
+const HIST_KEY = "kit_razbor_history";
+const histDateFmt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch (e) { return []; }
+}
+function storeHistory(list) {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(list)); } catch (e) {}
+}
+
+function addToHistory(data) {
+  const list = loadHistory();
+  const entry = {
+    id: Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+    product: data.product || "Без названия",
+    created: new Date().toISOString(),
+    data: data
+  };
+  list.unshift(entry);
+  if (list.length > 30) list.length = 30;
+  storeHistory(list);
+  activeHistId = entry.id;
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = loadHistory();
+  const block = el("historyBlock");
+  const box = el("historyList");
+  if (!list.length) { block.style.display = "none"; return; }
+  box.innerHTML = "";
+  list.forEach(entry => {
+    const row = document.createElement("div");
+    row.className = "hist-row" + (entry.id === activeHistId ? " active" : "");
+    const nm = document.createElement("span"); nm.className = "hist-name"; nm.textContent = entry.product;
+    const dt = document.createElement("span"); dt.className = "hist-date";
+    dt.textContent = entry.created ? histDateFmt.format(new Date(entry.created)) : "";
+    const del = document.createElement("button"); del.className = "hist-del"; del.textContent = "×"; del.title = "Удалить";
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const rest = loadHistory().filter(x => x.id !== entry.id);
+      storeHistory(rest);
+      if (entry.id === activeHistId) activeHistId = null;
+      renderHistory();
+    });
+    row.append(nm, dt, del);
+    row.addEventListener("click", () => {
+      if (entry.data && Array.isArray(entry.data.nodes)) {
+        activeHistId = entry.id;
+        clearError();
+        setStatus("");
+        render(entry.data);
+        renderHistory();
+      }
+    });
+    box.appendChild(row);
+  });
+  block.style.display = "block";
+}
+
+el("newBtn").addEventListener("click", () => {
+  el("result").style.display = "none";
+  el("hypBanner").style.display = "none";
+  el("productName").value = "";
+  el("productDesc").value = "";
+  activeHistId = null;
+  lastData = null;
+  clearError();
+  setStatus("");
+  renderHistory();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  el("productName").focus();
+});
 
 function li(text) { const n = document.createElement("li"); n.textContent = text; return n; }
 function fillList(id, arr) {
@@ -596,6 +687,7 @@ async function copyText(text) {
 }
 
 refreshKeyUI();
+renderHistory();
 </script>
 </body>
 </html>
