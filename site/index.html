@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>КИТ · Разборщик продукта</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Piazzolla:opsz,wght@8..30,600;8..30,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ink: #1B2A2E; --muted: #5A6E72; --accent: #0E6E63; --accent-soft: #E3F0ED;
+    --dark: #0B4A43; --line: #D9E2E1; --card: #FBFDFC; --bg: #EFF4F3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: "Piazzolla", Georgia, serif; font-size: 40px; font-weight: 700; line-height: 1.08; margin: 6px 0 8px; }
+  .lead { color: var(--muted); font-size: 15px; max-width: 760px; }
+  .card { background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; padding: 22px 24px; margin-top: 18px; }
+  .card h2 { font-family: "Piazzolla", Georgia, serif; font-size: 22px; font-weight: 700; margin: 0 0 10px; }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+  input[type=text], input[type=password], textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    font-family: inherit; font-size: 15px; color: var(--ink); background: #FFFFFF;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { min-height: 88px; resize: vertical; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 10px; padding: 11px 22px;
+    font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; background: var(--accent); color: #FFFFFF; }
+  .btn:hover { background: #0B554D; }
+  .btn:disabled { background: #9DB4B0; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+  .btn.ghost:hover { background: var(--accent-soft); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+  .status { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted); }
+  .error { border: 1.5px solid #B3552F; background: #FBEFE9; color: #7C3A1D; border-radius: 10px; padding: 12px 16px; margin-top: 14px; display: none; }
+  .keyline { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .keyline a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  .hyp { border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0;
+    padding: 10px 16px; font-size: 13.5px; color: #3E5A56; margin-top: 18px; display: none; }
+  .section-title { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 26px 0 4px; }
+  .node { background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; padding: 18px 22px; margin-top: 12px; }
+  .node h3 { font-family: "Piazzolla", Georgia, serif; font-size: 19px; font-weight: 700; margin: 0; }
+  .node .purpose { color: var(--muted); font-size: 13.5px; margin: 4px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid #EAF0EF; vertical-align: top; font-size: 14px; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 11px; border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
+  .b-platform { background: var(--accent-soft); color: var(--accent); }
+  .b-dzo { background: #E7ECF8; color: #3A5390; }
+  .b-pki { background: #F6EEDD; color: #86641C; }
+  .b-core { background: var(--dark); color: #FFFFFF; }
+  ul.clean { margin: 6px 0 0; padding-left: 20px; }
+  ul.clean li { margin: 4px 0; }
+  .qs { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+  .qs .qs-title { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+  ol.plan { margin: 6px 0 0; padding-left: 22px; }
+  ol.plan li { margin: 6px 0; }
+  .footer { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 12.5px; color: var(--muted); }
+  #result { display: none; }
+  #resultHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">КИТ · Управление компетенциями и технологиями</div>
+  <h1>Разборщик продукта</h1>
+  <p class="lead">Демонстрация первого шага модели КИТ: по названию и описанию продукта модель Claude готовит черновой разбор изделия на узлы и технологии, предлагает источник по лестнице выбора и формулирует вопросы экспертам Центра НИОКР. Результат — материал для продакт-менеджера, а не решение.</p>
+
+  <div class="card" id="keyCard" style="display:none;">
+    <h2>Ключ API</h2>
+    <p style="margin:0 0 4px; color: var(--muted); font-size: 14px;">Ключ хранится только в этом браузере (localStorage) и отправляется напрямую в Anthropic API. На сервер проекта он не передаётся.</p>
+    <label for="keyInput">Ключ Anthropic API</label>
+    <input type="password" id="keyInput" placeholder="sk-ant-api03-…" autocomplete="off">
+    <div class="row"><button class="btn" id="saveKeyBtn">Сохранить ключ</button></div>
+  </div>
+
+  <div class="card" id="formCard">
+    <h2>Продукт</h2>
+    <label for="productName">Название продукта</label>
+    <input type="text" id="productName" placeholder="Например: Локатор — датчик присутствия для дома">
+    <label for="productDesc">Краткое описание (необязательно)</label>
+    <textarea id="productDesc" placeholder="Что делает продукт, для какого рынка, какие ограничения известны. Можно вставить ссылку на изделие — модель откроет её и разберёт продукт по данным со страницы."></textarea>
+    <div class="row">
+      <button class="btn" id="runBtn">Разобрать продукт</button>
+      <button class="btn ghost" id="stopBtn" style="display:none;">Остановить</button>
+      <span class="status" id="status"></span>
+    </div>
+    <div class="error" id="errorBox"></div>
+    <div class="keyline" id="keyLine" style="display:none;">Ключ API сохранён в браузере. <a id="changeKey">Сменить ключ</a></div>
+  </div>
+
+  <div class="hyp" id="hypBanner"><b>Все выводы ниже — гипотезы.</b> Их проверяют эксперты Центра НИОКР и живая база технологий: подтверждают источники, уточняют состав узлов, подбирают классы ПКИ. Конкретные поставщики и парт-номера на этом шаге не выбираются.</div>
+
+  <div id="result">
+    <div class="card">
+      <div id="resultHead">
+        <div>
+          <div class="eyebrow" id="rProductEyebrow">Разбор изделия</div>
+          <h2 id="rProduct" style="margin-top:4px;"></h2>
+        </div>
+        <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
+      </div>
+      <p id="rSummary" style="margin: 8px 0 0;"></p>
+    </div>
+
+    <div class="section-title">Узлы и технологии</div>
+    <div id="rNodes"></div>
+
+    <div class="section-title">Первая версия · цикл не длиннее двух месяцев</div>
+    <div class="card">
+      <div class="two-col">
+        <div>
+          <h2 style="font-size:18px;">ТТХ-кандидаты v1</h2>
+          <ul class="clean" id="rTtx"></ul>
+        </div>
+        <div>
+          <h2 style="font-size:18px;">За пределами v1</h2>
+          <ul class="clean" id="rDeferred"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Порядок действий по модели КИТ</div>
+    <div class="card"><ol class="plan" id="rPlan"></ol></div>
+
+    <div class="section-title">Открытые вопросы</div>
+    <div class="card"><ul class="clean" id="rOpen"></ul></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+const KEY_STORAGE = "kit_api_key";
+
+const SOURCING = {
+  platform: { label: "Платформа банка", cls: "b-platform" },
+  dzo:      { label: "Компетенция ДЗО", cls: "b-dzo" },
+  pki:      { label: "Покупное — ПКИ",  cls: "b-pki" },
+  core:     { label: "Core — делаем сами", cls: "b-core" }
+};
+
+const SYSTEM_PROMPT = `Ты — аналитик Управления компетенциями и технологиями (КИТ) банка. КИТ превращает технологические компетенции банка и его ДЗО (дочерних обществ) в продукты для внутреннего и внешнего рынков. По названию и описанию продукта подготовь черновой разбор изделия для продакт-менеджера.
+
+Применяй правила модели КИТ:
+1. Изделие разбирается на функциональные узлы (обычно 3–7), каждый узел — на технологии.
+2. По каждой технологии предложи источник по лестнице выбора: переиспользовать платформу банка (platform) → взять компетенцию ДЗО (dzo) → купить как покупное комплектующее изделие, ПКИ (pki) → разрабатывать самим только то, что составляет ядро продукта (core). Чем ниже по лестнице, тем дороже — спускайся только с обоснованием.
+3. Первая версия изделия собирается за цикл не длиннее двух месяцев. Сформулируй ТТХ-кандидаты первой версии; всё, что в срок не помещается, вынеси в раздел «за пределами v1».
+4. Конкретных поставщиков, марки и парт-номера не называй: выбор ПКИ — работа экспертов Центра НИОКР и живой базы технологий. Формулируй классы компонентов и вопросы экспертам по каждому узлу.
+5. Порядок действий описывай по потоку КИТ: продуктовый заказ → назначение владельца продукта → разбор на узлы по живой базе → сведение исполнителей (ДЗО, партнёры) → сборка v1 за цикл ≤ 2 месяцев → пилотные пользователи → итерации и локализация узлов → упаковка и вывод на рынок.
+6. Все выводы — гипотезы для проверки экспертами, а не решения.
+
+Требования к тексту: профессиональный деловой русский язык, без метафор и рекламных оборотов. Формулировки полные, но краткие. Пиши только на русском.`;
+
+const OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    product: { type: "string", description: "Нормализованное название изделия" },
+    summary: { type: "string", description: "Что это за продукт и для какого рынка, 1–3 предложения" },
+    nodes: {
+      type: "array",
+      description: "Функциональные узлы изделия",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          purpose: { type: "string", description: "Назначение узла в изделии, одно предложение" },
+          technologies: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                sourcing: { type: "string", enum: ["platform", "dzo", "pki", "core"] },
+                rationale: { type: "string", description: "Обоснование гипотезы об источнике, одно предложение" }
+              },
+              required: ["name", "sourcing", "rationale"],
+              additionalProperties: false
+            }
+          },
+          expert_questions: { type: "array", items: { type: "string" }, description: "Вопросы экспертам Центра НИОКР по узлу" }
+        },
+        required: ["name", "purpose", "technologies", "expert_questions"],
+        additionalProperties: false
+      }
+    },
+    v1_ttx: { type: "array", items: { type: "string" }, description: "ТТХ-кандидаты первой версии (цикл ≤ 2 месяцев)" },
+    v1_deferred: { type: "array", items: { type: "string" }, description: "Что сознательно вынесено за пределы первой версии" },
+    plan: { type: "array", items: { type: "string" }, description: "Порядок действий по потоку КИТ, по шагам" },
+    open_questions: { type: "array", items: { type: "string" }, description: "Открытые вопросы владельцу продукта и Управлению" }
+  },
+  required: ["product", "summary", "nodes", "v1_ttx", "v1_deferred", "plan", "open_questions"],
+  additionalProperties: false
+};
+
+const el = id => document.getElementById(id);
+
+function getKey() {
+  try { return localStorage.getItem(KEY_STORAGE) || ""; } catch (e) { return ""; }
+}
+function setKey(v) {
+  try { localStorage.setItem(KEY_STORAGE, v); } catch (e) { /* приватный режим — ключ проживёт только сессию */ }
+}
+
+let sessionKey = "";
+
+function refreshKeyUI() {
+  const has = !!(getKey() || sessionKey);
+  el("keyCard").style.display = has ? "none" : "block";
+  el("keyLine").style.display = has ? "block" : "none";
+  el("runBtn").disabled = !has;
+}
+
+el("saveKeyBtn").addEventListener("click", () => {
+  const v = el("keyInput").value.trim();
+  if (!v) return;
+  sessionKey = v;
+  setKey(v);
+  el("keyInput").value = "";
+  refreshKeyUI();
+});
+
+el("changeKey").addEventListener("click", () => {
+  sessionKey = "";
+  try { localStorage.removeItem(KEY_STORAGE); } catch (e) {}
+  refreshKeyUI();
+});
+
+let controller = null;
+
+el("runBtn").addEventListener("click", run);
+el("stopBtn").addEventListener("click", () => { if (controller) controller.abort(); });
+
+function setStatus(t) { el("status").textContent = t; }
+function showError(t) { const b = el("errorBox"); b.textContent = t; b.style.display = "block"; }
+function clearError() { el("errorBox").style.display = "none"; }
+
+const LINK_ADDON = `
+
+В данных есть ссылка. Сначала открой её инструментом web_fetch и разбирай изделие по сведениям со страницы; при необходимости открой с той же страницы раздел характеристик. Данные со страницы имеют приоритет над предположениями. Если ссылка не открылась, скажи об этом в summary и разбирай по названию и типовым требованиям.`;
+
+function apiHeaders(apiKey) {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true"
+  };
+}
+
+async function httpErrorText(resp) {
+  let msg = "Ошибка API: HTTP " + resp.status;
+  try {
+    const err = await resp.json();
+    if (err && err.error && err.error.message) msg += " — " + err.error.message;
+  } catch (e) {}
+  if (resp.status === 401) msg = "Ключ API не принят (HTTP 401). Проверьте ключ — «Сменить ключ» внизу формы.";
+  if (resp.status === 429) msg = "Превышен лимит запросов (HTTP 429). Подождите минуту и повторите.";
+  return msg;
+}
+
+async function runWithLink(apiKey, userText) {
+  const messages = [{ role: "user", content: userText }];
+  for (let round = 0; round < 6; round++) {
+    setStatus(round === 0 ? "Открываю ссылку и готовлю разбор — до нескольких минут…" : "Продолжаю разбор по ссылке…");
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal,
+      headers: apiHeaders(apiKey),
+      body: JSON.stringify({
+        model: "claude-opus-5",
+        max_tokens: 12000,
+        system: SYSTEM_PROMPT + LINK_ADDON,
+        tools: [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 }],
+        output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
+        messages: messages
+      })
+    });
+    if (!resp.ok) throw new Error(await httpErrorText(resp));
+    const msg = await resp.json();
+    if (msg.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: msg.content });
+      continue;
+    }
+    if (msg.stop_reason === "max_tokens") throw new Error("Ответ оборвался по лимиту длины. Сократите описание и повторите запрос.");
+    if (msg.stop_reason === "refusal") throw new Error("Модель отклонила запрос. Переформулируйте описание продукта.");
+    const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+    if (!text) throw new Error("Пустой ответ модели. Повторите запрос.");
+    return JSON.parse(text);
+  }
+  throw new Error("Разбор по ссылке не завершился за отведённые шаги. Повторите запрос.");
+}
+
+async function run() {
+  const name = el("productName").value.trim();
+  const desc = el("productDesc").value.trim();
+  clearError();
+  if (!name) { showError("Укажите название продукта."); return; }
+  const apiKey = getKey() || sessionKey;
+  if (!apiKey) { showError("Сначала сохраните ключ API."); return; }
+
+  el("runBtn").disabled = true;
+  el("stopBtn").style.display = "inline-flex";
+  el("result").style.display = "none";
+  el("hypBanner").style.display = "none";
+  setStatus("Отправляю запрос…");
+
+  const userText = "Название продукта: " + name + (desc ? "\nОписание: " + desc : "\nОписания нет — исходи из названия и типовых требований к такому изделию.");
+  const hasLink = /https?:\/\/[^\s"<>]+/i.test(name + " " + desc);
+
+  controller = new AbortController();
+  let jsonText = "";
+  let stopReason = null;
+
+  try {
+    if (hasLink) {
+      const data = await runWithLink(apiKey, userText);
+      render(data);
+      setStatus("Готово.");
+      return;
+    }
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal,
+      headers: apiHeaders(apiKey),
+      body: JSON.stringify({
+        model: "claude-opus-5",
+        max_tokens: 12000,
+        stream: true,
+        system: SYSTEM_PROMPT,
+        output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
+        messages: [{ role: "user", content: userText }]
+      })
+    });
+
+    if (!resp.ok) throw new Error(await httpErrorText(resp));
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        if (ev.type === "content_block_delta" && ev.delta) {
+          if (ev.delta.type === "text_delta") {
+            jsonText += ev.delta.text;
+            setStatus("Получаю разбор… " + jsonText.length + " симв.");
+          } else if (ev.delta.type === "thinking_delta") {
+            setStatus("Модель обдумывает разбор…");
+          }
+        } else if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) {
+          stopReason = ev.delta.stop_reason;
+        } else if (ev.type === "error") {
+          throw new Error("Ошибка API: " + (ev.error && ev.error.message ? ev.error.message : "неизвестная ошибка"));
+        }
+      }
+    }
+
+    if (!jsonText) throw new Error("Пустой ответ модели. Повторите запрос.");
+    if (stopReason === "max_tokens") throw new Error("Ответ оборвался по лимиту длины. Сократите описание и повторите запрос.");
+    if (stopReason === "refusal") throw new Error("Модель отклонила запрос. Переформулируйте описание продукта.");
+
+    const data = JSON.parse(jsonText);
+    render(data);
+    setStatus("Готово.");
+  } catch (e) {
+    if (e.name === "AbortError") setStatus("Остановлено.");
+    else { setStatus(""); showError(e.message || String(e)); }
+  } finally {
+    controller = null;
+    el("runBtn").disabled = false;
+    el("stopBtn").style.display = "none";
+  }
+}
+
+let lastData = null;
+
+function li(text) { const n = document.createElement("li"); n.textContent = text; return n; }
+function fillList(id, arr) {
+  const box = el(id); box.innerHTML = "";
+  (arr && arr.length ? arr : ["—"]).forEach(t => box.appendChild(li(t)));
+}
+
+function render(d) {
+  lastData = d;
+  el("rProduct").textContent = d.product || "";
+  el("rSummary").textContent = d.summary || "";
+
+  const nodesBox = el("rNodes");
+  nodesBox.innerHTML = "";
+  (d.nodes || []).forEach((node, i) => {
+    const card = document.createElement("div");
+    card.className = "node";
+
+    const h = document.createElement("h3");
+    h.textContent = (i + 1) + ". " + node.name;
+    card.appendChild(h);
+
+    const p = document.createElement("div");
+    p.className = "purpose";
+    p.textContent = node.purpose || "";
+    card.appendChild(p);
+
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th style='width:32%'>Технология</th><th style='width:20%'>Источник</th><th>Обоснование гипотезы</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    (node.technologies || []).forEach(t => {
+      const tr = document.createElement("tr");
+      const s = SOURCING[t.sourcing] || { label: t.sourcing, cls: "b-pki" };
+      const td1 = document.createElement("td"); td1.textContent = t.name;
+      const td2 = document.createElement("td");
+      const badge = document.createElement("span"); badge.className = "badge " + s.cls; badge.textContent = s.label;
+      td2.appendChild(badge);
+      const td3 = document.createElement("td"); td3.style.color = "var(--muted)"; td3.textContent = t.rationale || "";
+      tr.append(td1, td2, td3);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    card.appendChild(table);
+
+    if (node.expert_questions && node.expert_questions.length) {
+      const qs = document.createElement("div");
+      qs.className = "qs";
+      const qt = document.createElement("div"); qt.className = "qs-title"; qt.textContent = "Вопросы экспертам Центра НИОКР";
+      qs.appendChild(qt);
+      const ul = document.createElement("ul"); ul.className = "clean";
+      node.expert_questions.forEach(q => ul.appendChild(li(q)));
+      qs.appendChild(ul);
+      card.appendChild(qs);
+    }
+    nodesBox.appendChild(card);
+  });
+
+  fillList("rTtx", d.v1_ttx);
+  fillList("rDeferred", d.v1_deferred);
+  fillList("rOpen", d.open_questions);
+
+  const plan = el("rPlan"); plan.innerHTML = "";
+  (d.plan || []).forEach(s => plan.appendChild(li(s)));
+
+  el("hypBanner").style.display = "block";
+  el("result").style.display = "block";
+  el("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+el("copyBtn").addEventListener("click", async () => {
+  if (!lastData) return;
+  const d = lastData;
+  const L = [];
+  L.push("# Разбор изделия: " + (d.product || ""));
+  L.push("");
+  L.push(d.summary || "");
+  L.push("");
+  L.push("Все выводы — гипотезы для проверки экспертами Центра НИОКР и живой базой технологий.");
+  L.push("");
+  L.push("## Узлы и технологии");
+  (d.nodes || []).forEach((n, i) => {
+    L.push("");
+    L.push("### " + (i + 1) + ". " + n.name);
+    L.push(n.purpose || "");
+    (n.technologies || []).forEach(t => {
+      const s = SOURCING[t.sourcing] ? SOURCING[t.sourcing].label : t.sourcing;
+      L.push("- " + t.name + " — источник: " + s + ". " + (t.rationale || ""));
+    });
+    if (n.expert_questions && n.expert_questions.length) {
+      L.push("");
+      L.push("Вопросы экспертам:");
+      n.expert_questions.forEach(q => L.push("- " + q));
+    }
+  });
+  L.push("");
+  L.push("## ТТХ-кандидаты первой версии (цикл ≤ 2 месяцев)");
+  (d.v1_ttx || []).forEach(t => L.push("- " + t));
+  L.push("");
+  L.push("## За пределами v1");
+  (d.v1_deferred || []).forEach(t => L.push("- " + t));
+  L.push("");
+  L.push("## Порядок действий по модели КИТ");
+  (d.plan || []).forEach((t, i) => L.push((i + 1) + ". " + t));
+  L.push("");
+  L.push("## Открытые вопросы");
+  (d.open_questions || []).forEach(t => L.push("- " + t));
+  copyText(L.join("\n"));
+});
+
+async function copyText(text) {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) { ok = false; }
+  if (!ok) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+  }
+  if (ok) {
+    el("copyBtn").textContent = "Скопировано";
+    setTimeout(() => { el("copyBtn").textContent = "Скопировать разбор"; }, 2000);
+  } else {
+    showError("Не удалось скопировать в буфер обмена. Скопируйте текст вручную из окна результата.");
+  }
+}
+
+refreshKeyUI();
+</script>
+</body>
+</html>
