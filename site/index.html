@@ -60,6 +60,15 @@
   @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
   ol.plan { margin: 6px 0 0; padding-left: 22px; }
   ol.plan li { margin: 6px 0; }
+  .gantt { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .g-scale { display: flex; margin-bottom: 2px; }
+  .g-scale div { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); border-left: 1px solid var(--line); padding-left: 4px; box-sizing: border-box; overflow: hidden; white-space: nowrap; }
+  .g-label { font-size: 12.5px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .g-label span:last-child { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); font-weight: 400; flex-shrink: 0; }
+  .g-track { position: relative; height: 16px; background: #EFF3F2; border-radius: 5px; margin-top: 3px; }
+  .g-bar { position: absolute; top: 0; height: 100%; border-radius: 5px; min-width: 6px; }
+  .rm-table-wrap { overflow-x: auto; margin-top: 14px; }
+  .rm-table-wrap table { min-width: 640px; }
   .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
   .topbar h1 { margin-bottom: 0; }
   .topbar-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 4px; }
@@ -122,8 +131,12 @@
           <div class="eyebrow" id="rProductEyebrow">Разбор изделия</div>
           <h2 id="rProduct" style="margin-top:4px;"></h2>
         </div>
-        <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
+        <div class="row" style="margin-top:0;">
+          <button class="btn ghost" id="copyBtn">Скопировать разбор</button>
+          <button class="btn" id="roadmapBtn">Дорожная карта</button>
+        </div>
       </div>
+      <div class="status" id="rmStatus" style="margin-top:8px;"></div>
       <p id="rSummary" style="margin: 8px 0 0;"></p>
     </div>
 
@@ -149,6 +162,27 @@
 
     <div class="section-title">Открытые вопросы</div>
     <div class="card"><ul class="clean" id="rOpen"></ul></div>
+
+    <div id="roadmap" style="display:none;">
+      <div class="section-title">Дорожная карта · драфт по нормативам КИТ</div>
+      <div class="card">
+        <p id="rmSummary" style="margin:0 0 6px;"></p>
+        <div class="gantt" id="rmGantt"></div>
+        <div class="rm-table-wrap">
+          <table>
+            <thead><tr><th>Этап</th><th>Недели</th><th>Роль</th><th>Результат</th><th>На смотре</th></tr></thead>
+            <tbody id="rmTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="two-col">
+          <div><h2 style="font-size:17px;">Риски</h2><ul class="clean" id="rmRisks"></ul></div>
+          <div><h2 style="font-size:17px;">Допущения</h2><ul class="clean" id="rmAssumptions"></ul></div>
+        </div>
+        <div style="margin-top:12px;"><h2 style="font-size:17px;">Следующие циклы</h2><ul class="clean" id="rmNext"></ul></div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -217,6 +251,48 @@ const OUTPUT_SCHEMA = {
   required: ["product", "summary", "nodes", "v1_ttx", "v1_deferred", "plan", "open_questions"],
   additionalProperties: false
 };
+
+const ROADMAP_PROMPT = `Ты — руководитель проектов Управления компетенциями и технологиями (КИТ) банка. По готовому разбору изделия построй драфт дорожной карты вывода продукта в жизнь.
+
+Правила модели КИТ:
+1. Работа делится на циклы длиной не более 8 недель. Каждый цикл заканчивается ощутимым предъявляемым результатом — тем, что можно показать на ежемесячном смотре: работающий макет, закрытый контур функций, пилот у пользователей. Сложное изделие — несколько циклов подряд; под срок режется состав цикла, а не срок под состав.
+2. Поток: подготовка (ТЗ на изделие, назначение PM, сведение исполнителей — ДЗО, подрядчики; недели, не месяцы) → циклы сборки → пилотная эксплуатация → итерации и локализация узлов → упаковка и вывод на рынок → жизнь продукта (поставки, поддержка).
+3. Каждому этапу назначь ответственную роль из состава КИТ: PM изделия, системный аналитик, архитектор, руководитель проекта, Центр НИОКР, команды ДЗО и подрядчики, сервис упаковки, ИТ-блок банка.
+4. Сроки — нормативные гипотезы, а не обязательства: их уточняет руководитель проекта по реальным мощностям исполнителей. Допущения фиксируй явно.
+5. Этапы могут идти параллельно, если их исполнители разные. Пиши профессиональным деловым русским языком, без метафор.`;
+
+const ROADMAP_SCHEMA = {
+  type: "object",
+  properties: {
+    horizon_weeks: { type: "integer", description: "Общая длина карты в неделях" },
+    summary: { type: "string", description: "Оценка: общий срок до живого продукта, реалистичность, критический путь — 2–4 предложения" },
+    phases: {
+      type: "array",
+      description: "Этапы и циклы в порядке потока КИТ",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          type: { type: "string", enum: ["prep", "cycle", "pilot", "packaging", "life"], description: "prep — подготовка и сведение; cycle — цикл сборки; pilot — пилотная эксплуатация; packaging — упаковка и вывод на рынок; life — жизнь продукта" },
+          start_week: { type: "integer", description: "Неделя начала, с 1" },
+          weeks: { type: "integer", description: "Длительность в неделях; для cycle — не более 8" },
+          owner: { type: "string", description: "Ответственная роль" },
+          result: { type: "string", description: "Ощутимый результат этапа, одно предложение" },
+          review: { type: "string", description: "Что предъявляется на смотре по итогам этапа" }
+        },
+        required: ["name", "type", "start_week", "weeks", "owner", "result", "review"],
+        additionalProperties: false
+      }
+    },
+    next_cycles: { type: "array", items: { type: "string" }, description: "Что сознательно вынесено в циклы за горизонтом карты" },
+    risks: { type: "array", items: { type: "string" }, description: "Главные риски с мерой реагирования, по одному предложению" },
+    assumptions: { type: "array", items: { type: "string" }, description: "Допущения, на которых держатся сроки" }
+  },
+  required: ["horizon_weeks", "summary", "phases", "next_cycles", "risks", "assumptions"],
+  additionalProperties: false
+};
+
+const PHASE_COLORS = { prep: "#9DB4B0", cycle: "#0E6E63", pilot: "#5670B8", packaging: "#C9A03C", life: "#0B4A43" };
 
 const el = id => document.getElementById(id);
 
@@ -507,6 +583,7 @@ function addToHistory(data) {
   if (list.length > 30) list.length = 30;
   storeHistory(list);
   activeHistId = entry.id;
+  lastRoadmap = null;
   renderHistory();
 }
 
@@ -547,6 +624,8 @@ function renderHistory() {
         clearError();
         setStatus("");
         render(entry.data);
+        if (entry.roadmap) { lastRoadmap = entry.roadmap; renderRoadmap(entry.roadmap, false); }
+        else lastRoadmap = null;
         renderHistory();
       }
     });
@@ -562,12 +641,160 @@ el("newBtn").addEventListener("click", () => {
   el("productDesc").value = "";
   activeHistId = null;
   lastData = null;
+  lastRoadmap = null;
   clearError();
   setStatus("");
   renderHistory();
   window.scrollTo({ top: 0, behavior: "smooth" });
   el("productName").focus();
 });
+
+let lastRoadmap = null;
+
+el("roadmapBtn").addEventListener("click", generateRoadmap);
+
+async function generateRoadmap() {
+  if (!lastData) return;
+  const apiKey = getKey() || sessionKey;
+  if (!apiKey) { showError("Сначала сохраните ключ API."); return; }
+  const btn = el("roadmapBtn");
+  btn.disabled = true;
+  el("rmStatus").textContent = "Строю дорожную карту…";
+  const rmController = new AbortController();
+  try {
+    const source = Object.assign({}, lastData);
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: rmController.signal,
+      headers: apiHeaders(apiKey),
+      body: JSON.stringify({
+        model: "claude-opus-5",
+        max_tokens: 9000,
+        stream: true,
+        system: ROADMAP_PROMPT,
+        output_config: { format: { type: "json_schema", schema: ROADMAP_SCHEMA } },
+        messages: [{ role: "user", content: "Разбор изделия (JSON):\n" + JSON.stringify(source) + "\n\nПострой дорожную карту." }]
+      })
+    });
+    if (!resp.ok) throw new Error(await httpErrorText(resp));
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", jsonText = "", stopReason = null;
+    while (true) {
+      let chunk;
+      let watchdogFired = false;
+      const watchdog = setTimeout(() => { watchdogFired = true; try { rmController.abort(); } catch (e) {} }, 120000);
+      try { chunk = await reader.read(); }
+      catch (e) {
+        clearTimeout(watchdog);
+        if (watchdogFired) throw new Error("Нет ответа от API дольше двух минут — проверьте интернет или VPN и повторите.");
+        throw e;
+      }
+      clearTimeout(watchdog);
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        if (ev.type === "content_block_delta" && ev.delta) {
+          if (ev.delta.type === "text_delta") {
+            jsonText += ev.delta.text;
+            el("rmStatus").textContent = "Строю дорожную карту… " + jsonText.length + " симв.";
+          } else if (ev.delta.type === "thinking_delta") {
+            el("rmStatus").textContent = "Модель продумывает карту…";
+          }
+        } else if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) {
+          stopReason = ev.delta.stop_reason;
+        } else if (ev.type === "error") {
+          throw new Error("Ошибка API: " + (ev.error && ev.error.message ? ev.error.message : "неизвестная ошибка"));
+        }
+      }
+    }
+    if (!jsonText) throw new Error("Пустой ответ модели. Повторите запрос.");
+    if (stopReason === "max_tokens") throw new Error("Карта оборвалась по лимиту длины. Повторите запрос.");
+    const rm = JSON.parse(jsonText);
+    lastRoadmap = rm;
+    if (activeHistId) {
+      const list = loadHistory();
+      const entry = list.find(x => x.id === activeHistId);
+      if (entry) { entry.roadmap = rm; storeHistory(list); }
+    }
+    renderRoadmap(rm);
+    el("rmStatus").textContent = "";
+  } catch (e) {
+    el("rmStatus").textContent = "";
+    if (e.name !== "AbortError") showError(e.message || String(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderRoadmap(rm, scroll) {
+  el("rmSummary").textContent = rm.summary || "";
+
+  const gantt = el("rmGantt");
+  gantt.innerHTML = "";
+  const horizon = Math.max(1, rm.horizon_weeks || 1);
+
+  const scale = document.createElement("div");
+  scale.className = "g-scale";
+  const monthCount = Math.max(1, Math.ceil(horizon / 4));
+  for (let m = 0; m < monthCount; m++) {
+    const cell = document.createElement("div");
+    const w = Math.min(4, horizon - m * 4);
+    cell.style.width = (w / horizon * 100) + "%";
+    cell.textContent = "мес " + (m + 1);
+    scale.appendChild(cell);
+  }
+  gantt.appendChild(scale);
+
+  (rm.phases || []).forEach(ph => {
+    const row = document.createElement("div");
+    const label = document.createElement("div");
+    label.className = "g-label";
+    const nm = document.createElement("span"); nm.textContent = ph.name;
+    const wk = document.createElement("span");
+    const from = Math.max(1, ph.start_week || 1);
+    const len = Math.max(1, ph.weeks || 1);
+    wk.textContent = "нед " + from + "–" + (from + len - 1) + " · " + (ph.owner || "");
+    label.append(nm, wk);
+    const track = document.createElement("div");
+    track.className = "g-track";
+    const bar = document.createElement("div");
+    bar.className = "g-bar";
+    bar.style.left = ((from - 1) / horizon * 100) + "%";
+    bar.style.width = (Math.min(len, horizon - from + 1) / horizon * 100) + "%";
+    bar.style.background = PHASE_COLORS[ph.type] || PHASE_COLORS.cycle;
+    track.appendChild(bar);
+    row.append(label, track);
+    gantt.appendChild(row);
+  });
+
+  const tbody = el("rmTableBody");
+  tbody.innerHTML = "";
+  (rm.phases || []).forEach(ph => {
+    const tr = document.createElement("tr");
+    const from = Math.max(1, ph.start_week || 1);
+    const len = Math.max(1, ph.weeks || 1);
+    [ph.name, from + "–" + (from + len - 1), ph.owner || "", ph.result || "", ph.review || ""].forEach((v, i) => {
+      const td = document.createElement("td");
+      td.textContent = v;
+      if (i >= 3) td.style.color = "var(--muted)";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  fillList("rmRisks", rm.risks);
+  fillList("rmAssumptions", rm.assumptions);
+  fillList("rmNext", rm.next_cycles);
+
+  el("roadmap").style.display = "block";
+  if (scroll !== false) el("roadmap").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function li(text) { const n = document.createElement("li"); n.textContent = text; return n; }
 function fillList(id, arr) {
@@ -577,6 +804,8 @@ function fillList(id, arr) {
 
 function render(d) {
   lastData = d;
+  el("roadmap").style.display = "none";
+  el("rmStatus").textContent = "";
   el("rProduct").textContent = d.product || "";
   el("rSummary").textContent = d.summary || "";
 
@@ -674,6 +903,27 @@ el("copyBtn").addEventListener("click", async () => {
   L.push("");
   L.push("## Открытые вопросы");
   (d.open_questions || []).forEach(t => L.push("- " + t));
+  if (lastRoadmap) {
+    const rm = lastRoadmap;
+    L.push("");
+    L.push("## Дорожная карта (драфт по нормативам КИТ)");
+    L.push(rm.summary || "");
+    L.push("");
+    (rm.phases || []).forEach(ph => {
+      const from = Math.max(1, ph.start_week || 1);
+      const to = from + Math.max(1, ph.weeks || 1) - 1;
+      L.push("- Недели " + from + "–" + to + " · " + ph.name + " (" + (ph.owner || "") + "). Результат: " + (ph.result || "") + " На смотре: " + (ph.review || ""));
+    });
+    L.push("");
+    L.push("Следующие циклы:");
+    (rm.next_cycles || []).forEach(t => L.push("- " + t));
+    L.push("");
+    L.push("Риски:");
+    (rm.risks || []).forEach(t => L.push("- " + t));
+    L.push("");
+    L.push("Допущения:");
+    (rm.assumptions || []).forEach(t => L.push("- " + t));
+  }
   copyText(L.join("\n"));
 });
 
