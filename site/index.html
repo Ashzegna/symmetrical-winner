@@ -69,7 +69,6 @@
 <div class="wrap">
   <div class="eyebrow">КИТ · Управление компетенциями и технологиями</div>
   <h1>Разборщик продукта</h1>
-  <p class="lead">Демонстрация первого шага модели КИТ: по названию и описанию продукта модель Claude готовит черновой разбор изделия на узлы и технологии, предлагает источник по лестнице выбора и формулирует вопросы экспертам Центра НИОКР. Результат — материал для продакт-менеджера, а не решение.</p>
 
   <div class="card" id="keyCard" style="display:none;">
     <h2>Ключ API</h2>
@@ -80,8 +79,7 @@
   </div>
 
   <div class="card" id="formCard">
-    <h2>Продукт</h2>
-    <label for="productName">Название продукта</label>
+    <label for="productName" style="margin-top:0;">Название продукта или ссылка</label>
     <input type="text" id="productName" placeholder="Например: Локатор — датчик присутствия для дома">
     <label for="productDesc">Краткое описание (необязательно)</label>
     <textarea id="productDesc" placeholder="Что делает продукт, для какого рынка, какие ограничения известны. Можно вставить ссылку на изделие — модель откроет её и разберёт продукт по данным со страницы."></textarea>
@@ -267,34 +265,107 @@ async function httpErrorText(resp) {
 
 async function runWithLink(apiKey, userText) {
   const messages = [{ role: "user", content: userText }];
+  const t0 = Date.now();
   for (let round = 0; round < 6; round++) {
-    setStatus(round === 0 ? "Открываю ссылку и готовлю разбор — до нескольких минут…" : "Продолжаю разбор по ссылке…");
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: controller.signal,
-      headers: apiHeaders(apiKey),
-      body: JSON.stringify({
-        model: "claude-opus-5",
-        max_tokens: 12000,
-        system: SYSTEM_PROMPT + LINK_ADDON,
-        tools: [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 }],
-        output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
-        messages: messages
-      })
-    });
-    if (!resp.ok) throw new Error(await httpErrorText(resp));
-    const msg = await resp.json();
-    if (msg.stop_reason === "pause_turn") {
-      messages.push({ role: "assistant", content: msg.content });
+    const turn = await streamLinkTurn(apiKey, messages, t0);
+    if (turn.stopReason === "pause_turn") {
+      messages.push({ role: "assistant", content: turn.blocks });
       continue;
     }
-    if (msg.stop_reason === "max_tokens") throw new Error("Ответ оборвался по лимиту длины. Сократите описание и повторите запрос.");
-    if (msg.stop_reason === "refusal") throw new Error("Модель отклонила запрос. Переформулируйте описание продукта.");
-    const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+    if (turn.stopReason === "max_tokens") throw new Error("Ответ оборвался по лимиту длины. Сократите описание и повторите запрос.");
+    if (turn.stopReason === "refusal") throw new Error("Модель отклонила запрос. Переформулируйте описание продукта.");
+    const text = turn.blocks.filter(b => b.type === "text").map(b => b.text).join("");
     if (!text) throw new Error("Пустой ответ модели. Повторите запрос.");
     return JSON.parse(text);
   }
   throw new Error("Разбор по ссылке не завершился за отведённые шаги. Повторите запрос.");
+}
+
+function elapsed(t0) { return Math.round((Date.now() - t0) / 1000) + " с"; }
+
+async function streamLinkTurn(apiKey, messages, t0) {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    signal: controller.signal,
+    headers: apiHeaders(apiKey),
+    body: JSON.stringify({
+      model: "claude-opus-5",
+      max_tokens: 12000,
+      stream: true,
+      system: SYSTEM_PROMPT + LINK_ADDON,
+      tools: [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 }],
+      output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
+      messages: messages
+    })
+  });
+  if (!resp.ok) throw new Error(await httpErrorText(resp));
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  const blocks = [];
+  const partialJson = {};
+  let stopReason = null;
+  let buf = "";
+  let jsonChars = 0;
+  setStatus("Запрос принят, жду ответа… " + elapsed(t0));
+
+  while (true) {
+    let chunk;
+    let watchdogFired = false;
+    const watchdog = setTimeout(() => { watchdogFired = true; try { controller.abort(); } catch (e) {} }, 120000);
+    try {
+      chunk = await reader.read();
+    } catch (e) {
+      clearTimeout(watchdog);
+      if (watchdogFired) {
+        throw new Error("Нет ответа от API дольше двух минут — проверьте интернет или VPN и повторите запрос.");
+      }
+      throw e;
+    }
+    clearTimeout(watchdog);
+    if (chunk.done) break;
+    buf += decoder.decode(chunk.value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+      if (ev.type === "content_block_start") {
+        blocks[ev.index] = JSON.parse(JSON.stringify(ev.content_block));
+        if (ev.content_block.type === "server_tool_use") {
+          partialJson[ev.index] = "";
+          setStatus("Открываю ссылку… " + elapsed(t0));
+        }
+      } else if (ev.type === "content_block_delta" && ev.delta) {
+        const b = blocks[ev.index];
+        if (!b) continue;
+        if (ev.delta.type === "text_delta") {
+          b.text = (b.text || "") + ev.delta.text;
+          jsonChars += ev.delta.text.length;
+          setStatus("Получаю разбор… " + jsonChars + " симв. · " + elapsed(t0));
+        } else if (ev.delta.type === "thinking_delta") {
+          b.thinking = (b.thinking || "") + ev.delta.thinking;
+          setStatus("Модель обдумывает разбор… " + elapsed(t0));
+        } else if (ev.delta.type === "signature_delta") {
+          b.signature = (b.signature || "") + ev.delta.signature;
+        } else if (ev.delta.type === "input_json_delta") {
+          partialJson[ev.index] = (partialJson[ev.index] || "") + ev.delta.partial_json;
+        }
+      } else if (ev.type === "content_block_stop") {
+        const b = blocks[ev.index];
+        if (b && partialJson[ev.index] !== undefined) {
+          try { b.input = partialJson[ev.index] ? JSON.parse(partialJson[ev.index]) : {}; } catch (e) { b.input = {}; }
+          delete partialJson[ev.index];
+        }
+      } else if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) {
+        stopReason = ev.delta.stop_reason;
+      } else if (ev.type === "error") {
+        throw new Error("Ошибка API: " + (ev.error && ev.error.message ? ev.error.message : "неизвестная ошибка"));
+      }
+    }
+  }
+  return { blocks: blocks.filter(Boolean), stopReason: stopReason };
 }
 
 async function run() {
