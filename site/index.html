@@ -388,6 +388,21 @@ function apiHeaders(apiKey) {
   };
 }
 
+async function fetchAPI(opts, statusFn) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch("https://api.anthropic.com/v1/messages", opts);
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      if (attempt >= 3) {
+        throw new Error("Сбой соединения с api.anthropic.com после трёх попыток. Чаще всего это VPN: переключите сервер VPN или сеть и повторите.");
+      }
+      if (statusFn) statusFn("Сбой соединения, пробую ещё раз… (попытка " + (attempt + 1) + " из 3)");
+      await new Promise(r => setTimeout(r, 1500 * attempt));
+    }
+  }
+}
+
 async function httpErrorText(resp) {
   let msg = "Ошибка API: HTTP " + resp.status;
   try {
@@ -420,7 +435,7 @@ async function runWithLink(apiKey, userText) {
 function elapsed(t0) { return Math.round((Date.now() - t0) / 1000) + " с"; }
 
 async function streamLinkTurn(apiKey, messages, t0) {
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+  const resp = await fetchAPI({
     method: "POST",
     signal: controller.signal,
     headers: apiHeaders(apiKey),
@@ -433,7 +448,7 @@ async function streamLinkTurn(apiKey, messages, t0) {
       output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
       messages: messages
     })
-  });
+  }, setStatus);
   if (!resp.ok) throw new Error(await httpErrorText(resp));
 
   const reader = resp.body.getReader();
@@ -534,7 +549,7 @@ async function run() {
       return;
     }
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    const resp = await fetchAPI({
       method: "POST",
       signal: controller.signal,
       headers: apiHeaders(apiKey),
@@ -546,7 +561,7 @@ async function run() {
         output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
         messages: [{ role: "user", content: userText }]
       })
-    });
+    }, setStatus);
 
     if (!resp.ok) throw new Error(await httpErrorText(resp));
 
@@ -703,7 +718,7 @@ async function generateRoadmap() {
   const rmController = new AbortController();
   try {
     const source = Object.assign({}, lastData);
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    const resp = await fetchAPI({
       method: "POST",
       signal: rmController.signal,
       headers: apiHeaders(apiKey),
@@ -715,7 +730,7 @@ async function generateRoadmap() {
         output_config: { format: { type: "json_schema", schema: ROADMAP_SCHEMA } },
         messages: [{ role: "user", content: "Разбор изделия (JSON):\n" + JSON.stringify(source) + "\n\nПострой дорожную карту." }]
       })
-    });
+    }, t => { el("rmStatus").textContent = t; });
     if (!resp.ok) throw new Error(await httpErrorText(resp));
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
