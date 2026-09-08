@@ -163,6 +163,7 @@
 <div id="dlg"><div class="box"><h3 id="dlgTitle"></h3><p id="dlgText"></p><input type="text" id="dlgInput" autocomplete="off"><select id="dlgSelect"></select><div class="row"><button class="btn quiet" id="dlgCancel">Отмена</button><button class="btn primary" id="dlgOk">Готово</button></div></div></div>
 
 <input type="file" id="fileImages" multiple accept="image/*">
+<input type="file" id="fileFolder" multiple webkitdirectory directory>
 <input type="file" id="fileReplace" accept="image/*">
 <input type="file" id="fileProject" accept=".zip,application/zip,application/json,.json">
 
@@ -255,10 +256,27 @@ async function importFiles(fileList) {
   toast(parts.join(" · "), broken > 0); commit(); renderPool(); renderTree(); save(true);
 }
 $("fileImages").addEventListener("change", e => { importFiles(e.target.files); e.target.value = ""; });
-$("bImport").addEventListener("click", () => $("fileImages").click());
+$("bImport").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.left, r.bottom + 6, [
+  { h: "Импорт изображений" },
+  { t: "Выбрать файлы…", f: () => $("fileImages").click() },
+  { t: "Выбрать папку целиком…", f: () => $("fileFolder").click() },
+  { t: "Перетащить файлы или папку в окно", disabled: true, f: () => {} },
+]); });
+$("fileFolder").addEventListener("change", e => { importFiles(e.target.files); e.target.value = ""; });
+// перетащенная папка: обходим её рекурсивно
+async function filesFromDataTransfer(dt) {
+  const items = Array.from(dt.items || []); const entries = items.map(i => i.webkitGetAsEntry ? i.webkitGetAsEntry() : null);
+  if (!entries.some(Boolean)) return Array.from(dt.files || []);
+  const out = [];
+  const readDir = (dir) => new Promise(res => { const rd = dir.createReader(); const all = []; const step = () => rd.readEntries(es => { if (!es.length) return res(all); all.push(...es); step(); }, () => res(all)); step(); });
+  const fileOf = (fe) => new Promise(res => fe.file(res, () => res(null)));
+  const visit = async (en) => { if (!en) return; if (en.isFile) { const f = await fileOf(en); if (f) out.push(f); } else if (en.isDirectory) { for (const ch of await readDir(en)) await visit(ch); } };
+  for (let i = 0; i < entries.length; i++) { if (entries[i]) await visit(entries[i]); else if (dt.files[i]) out.push(dt.files[i]); }
+  return out;
+}
 document.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); document.body.classList.add("dropping"); } });
 document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
-document.addEventListener("drop", e => { document.body.classList.remove("dropping"); if (e.dataTransfer?.files?.length) { e.preventDefault(); if (!e.target.closest(".strip, .node")) importFiles(e.dataTransfer.files); } });
+document.addEventListener("drop", async e => { document.body.classList.remove("dropping"); if (e.dataTransfer?.files?.length) { e.preventDefault(); if (!e.target.closest(".strip, .node")) importFiles(await filesFromDataTransfer(e.dataTransfer)); } });
 async function gcImages() { const used = usedImages(); for (const id of [...IMG.keys()]) if (!used.has(id) && !P.pool.includes(id)) { const r = IMG.get(id); URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); IMG.delete(id); await imgDel(id).catch(() => {}); } }
 
 // ---------- дерево ----------
@@ -338,8 +356,22 @@ function thumbEl(id, opts = {}) {
   el.addEventListener("dragend", () => { el.classList.remove("dragging"); setTimeout(() => dragImgs = [], 50); });
   el.querySelector(".x").addEventListener("click", e => { e.stopPropagation(); if (opts.pool) removeImage(id); else unassign(opts.node, id); });
   el.addEventListener("dblclick", () => window.open(r.url, "_blank"));
+  el.addEventListener("contextmenu", e => { e.preventDefault(); e.stopPropagation(); openMenu(e.clientX, e.clientY, [
+    { h: r.name }, { t: "Открыть оригинал", f: () => window.open(r.url, "_blank") },
+    { t: "Заменить файлом…", f: () => { replaceTarget = id; $("fileReplace").click(); } },
+    opts.pool ? null : { t: "Вернуть в пул", f: () => unassign(opts.node, id) },
+    { t: "Удалить из проекта", danger: true, f: () => removeImageAnywhere(id) },
+  ].filter(Boolean)); });
   return el;
 }
+let replaceTarget = null;
+$("fileReplace").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; const id = replaceTarget; replaceTarget = null; if (!f || !id || !IMG.has(id)) return;
+  try { const buf = await f.arrayBuffer(); const { im, url } = await decode(f); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const old = IMG.get(id); URL.revokeObjectURL(old.url); URL.revokeObjectURL(old.thumbUrl);
+    const rec = { blob: f, thumb, w: im.naturalWidth, h: im.naturalHeight, name: f.name, hash: await sha256(buf), size: f.size }; await imgPut(id, rec); attach(id, rec); renderAll(); toast("Изображение заменено: " + f.name); }
+  catch (err) { toast("Замена: " + (err.message || err), true); }
+});
+async function removeImageAnywhere(id) { const r = IMG.get(id); if (!await confirmDlg("Удалить изображение?", `${r.name} будет удалено из проекта и из шагов.`)) return; walk(P.nodes, n => { const i = n.images.indexOf(id); if (i >= 0) n.images.splice(i, 1); }); const pi = P.pool.indexOf(id); if (pi >= 0) P.pool.splice(pi, 1); poolSel.delete(id); commit(); await gcImages(); renderAll(); save(true); }
 async function removeImage(id) { const r = IMG.get(id); if (!await confirmDlg("Удалить изображение?", `${r.name} будет удалено из проекта.`)) return; P.pool.splice(P.pool.indexOf(id), 1); poolSel.delete(id); commit(); await gcImages(); renderAll(); save(true); }
 function renderPool() {
   const pool = $("pool"); pool.innerHTML = ""; const list = P.pool.slice().sort((a, b) => natural.compare(IMG.get(a)?.name || "", IMG.get(b)?.name || ""));
@@ -394,7 +426,7 @@ function renderCenter() {
   n.images.forEach((id, i) => { if (!IMG.has(id)) return; const el = thumbEl(id, { node: n.id, index: i }); el.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }); el.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); if (dragImgs.length) { const idx = n.images.indexOf(id); assignImages(n.id, dragImgs, idx); dragImgs = []; } }); strip.appendChild(el); });
   strip.addEventListener("dragover", e => { if (dragImgs.length) { e.preventDefault(); strip.classList.add("dropover"); } });
   strip.addEventListener("dragleave", () => strip.classList.remove("dropover"));
-  strip.addEventListener("drop", e => { e.preventDefault(); strip.classList.remove("dropover"); if (dragImgs.length) { assignImages(n.id, dragImgs); dragImgs = []; } else if (e.dataTransfer.files.length) { importThenAssign(e.dataTransfer.files, n.id); } });
+  strip.addEventListener("drop", async e => { e.preventDefault(); strip.classList.remove("dropover"); if (dragImgs.length) { assignImages(n.id, dragImgs); dragImgs = []; } else if (e.dataTransfer.files.length) { importThenAssign(await filesFromDataTransfer(e.dataTransfer), n.id); } });
 }
 async function importThenAssign(files, nodeId) { const before = new Set(P.pool); await importFiles(files); const fresh = P.pool.filter(id => !before.has(id)); if (fresh.length) assignImages(nodeId, fresh); }
 function renderAll() { renderTree(); renderCenter(); renderPool(); $("ptitle").value = P.title; }
@@ -468,7 +500,8 @@ async function buildManifest(mode /* 'files' | 'inline' | 'preview' */, files) {
         if (mode === "preview") { imgs.push({ src: r.thumbUrl, full: r.url, w: r.w, h: r.h, alt: r.name }); continue; }
         const s800 = await resizeTo(r, 800); const s1600 = r.w > 900 ? await resizeTo(r, 1600) : null;
         if (mode === "files") { files[`assets/img/${base}_800.${s800.ext}`] = s800.blob; if (s1600) files[`assets/img/${base}_1600.${s1600.ext}`] = s1600.blob;
-          imgs.push({ src: `assets/img/${base}_800.${s800.ext}`, full: s1600 ? `assets/img/${base}_1600.${s1600.ext}` : `assets/img/${base}_800.${s800.ext}`, w: s800.w, h: s800.h, alt: r.name }); }
+          const p800 = `assets/img/${base}_800.${s800.ext}`, p1600 = s1600 ? `assets/img/${base}_1600.${s1600.ext}` : null;
+          imgs.push({ src: p800, full: p1600 || p800, srcset: p1600 ? `${p800} ${s800.w}w, ${p1600} ${s1600.w}w` : "", w: s800.w, h: s800.h, alt: r.name }); }
         else { imgs.push({ src: await blobToDataURL(s800.blob), full: s1600 ? await blobToDataURL(s1600.blob) : null, w: s800.w, h: s800.h, alt: r.name }); }
         toast(`Обработка изображений… ${++progress}`);
       }
@@ -535,7 +568,8 @@ function render(){var s=cur();side.classList.remove('open');side.querySelectorAl
  document.title=p.title+' — '+M.title;
  if(p.stepIndex){prog.textContent='Шаг '+p.stepIndex+' из '+M.stepsTotal;bar.style.width=(100*p.stepIndex/M.stepsTotal)+'%'}else{prog.textContent=p.type==='section'?'Раздел '+p.num:'';bar.style.width=(100*(i+1)/order.length)+'%'}
  var crumbs='<div class="crumbs"><a href="#/">Оглавление</a>'+p.crumbs.map(function(c){return ' › <a href="#/'+c.slug+'">'+esc(c.title)+'</a>'}).join('')+'</div>';
- var imgs='';if(p.images.length){var f=p.images[0];imgs+='<figure><img src="'+f.src+'" data-full="'+(f.full||f.src)+'" data-i="0" alt="'+esc(f.alt)+'" width="'+f.w+'" height="'+f.h+'" loading="lazy"></figure>';
+ var ss=function(im){return im.srcset?' srcset="'+im.srcset+'" sizes="(max-width: 860px) 100vw, 900px"':''};
+ var imgs='';if(p.images.length){var f=p.images[0];imgs+='<figure><img src="'+f.src+'"'+ss(f)+' data-full="'+(f.full||f.src)+'" data-i="0" alt="'+esc(f.alt)+'" width="'+f.w+'" height="'+f.h+'" loading="lazy"></figure>';
   if(p.images.length>1)imgs+='<div class="gallery">'+p.images.slice(1).map(function(im,k){return '<figure><img src="'+im.src+'" data-full="'+(im.full||im.src)+'" data-i="'+(k+1)+'" alt="'+esc(im.alt)+'" loading="lazy"></figure>'}).join('')+'</div>'}
  var kids=p.children.length?'<div class="toc-inline">'+p.children.map(function(cs){var c=byslug[cs];return '<a href="#/'+c.slug+'"><span class="n">'+esc(c.num)+'</span><span>'+esc(c.title)+'</span></a>'}).join('')+'</div>':'';
  main.innerHTML=crumbs+'<div class="kicker">'+(p.type==='step'?'Шаг '+esc(p.num):'Раздел '+esc(p.num))+'</div><h2 class="title">'+esc(p.title)+'</h2>'+(p.warning?'<div class="warn">▲ Внимание. Прочитайте пояснение до начала работ.</div>':'')+(p.html?'<div class="text">'+p.html+'</div>':'')+imgs+kids+
