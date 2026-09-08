@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Холст">
+<title>КИТ · Холст</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Piazzolla:opsz,wght@8..30,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F4F7F6; --paper: #FBFDFC; --ink: #1B2A2E; --muted: #5A6E72; --line: #D9E2E1;
+    --accent: #0E6E63; --accent-dark: #0B4A43; --accent-soft: #E3F0ED; --danger: #B3552F;
+    --header-h: 56px; --tabs-h: 42px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif; font-size: 14px;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  button, input { font-family: inherit; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; }
+
+  /* ---------- шапка ---------- */
+  header { position: fixed; inset: 0 0 auto 0; height: var(--header-h); display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    background: var(--paper); border-bottom: 1px solid var(--line); z-index: 20; padding-top: env(safe-area-inset-top); }
+  .brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: 8px; min-width: 0; }
+  .brand .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); }
+  .brand .name { font-family: "Piazzolla", Georgia, serif; font-size: 20px; font-weight: 700; white-space: nowrap; }
+  .spacer { flex: 1; }
+  .btn { border: 1.5px solid var(--accent); background: transparent; color: var(--accent); border-radius: 9px; padding: 7px 12px; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--accent-soft); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-dark); }
+  .btn.quiet { border-color: var(--line); color: var(--muted); }
+  .btn.quiet:hover { background: #fff; color: var(--ink); }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.danger:hover { background: #F8EBE5; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* ---------- вкладки страниц ---------- */
+  #tabs { position: fixed; top: calc(var(--header-h) + env(safe-area-inset-top)); left: 0; right: 0; height: var(--tabs-h); display: flex; align-items: stretch; gap: 4px; padding: 6px 10px 0;
+    background: var(--paper); border-bottom: 1px solid var(--line); z-index: 19; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--line); border-bottom: none; border-radius: 9px 9px 0 0; background: #EEF3F2; color: var(--muted); cursor: pointer; white-space: nowrap; font-size: 13px; }
+  .tab .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; opacity: .7; }
+  .tab.active { background: var(--bg); color: var(--ink); font-weight: 600; border-color: var(--line); position: relative; }
+  .tab.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+  .tab.add { border-style: dashed; background: transparent; color: var(--accent); font-weight: 600; }
+  .tab.dragover { outline: 2px dashed var(--accent); }
+
+  /* ---------- поле ---------- */
+  #viewport { position: fixed; top: calc(var(--header-h) + var(--tabs-h) + env(safe-area-inset-top)); left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab;
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, #C9D6D3 1px, transparent 1.2px); }
+  #viewport.panning { cursor: grabbing; }
+  #viewport.dropping { outline: 3px dashed var(--accent); outline-offset: -6px; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+
+  .card { position: absolute; background: #fff; border: 1px solid #C7D3D1; border-radius: 6px; box-shadow: 0 1px 2px rgba(27,42,46,.08), 0 6px 18px rgba(27,42,46,.06); cursor: move; touch-action: none; }
+  .card.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .card .label { position: absolute; left: 0; bottom: 100%; margin-bottom: 6px; max-width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; border-radius: 4px; }
+  .card.selected .label { color: var(--accent); }
+  .card .label[contenteditable="true"] { background: #fff; outline: 1.5px solid var(--accent); color: var(--ink); overflow: visible; text-overflow: clip; -webkit-user-select: text; user-select: text; cursor: text; }
+  .card img { display: block; width: 100%; height: 100%; object-fit: fill; border-radius: 5px; pointer-events: none; -webkit-user-drag: none; }
+  .card .text { width: 100%; height: 100%; padding: 16px 18px; overflow: hidden; font-size: 16px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; border-radius: 5px; background: #FFFBEA; }
+  .card .text[contenteditable="true"] { outline: none; overflow: auto; -webkit-user-select: text; user-select: text; cursor: text; }
+  .card .text:empty::before { content: "Двойное нажатие — редактировать"; color: #9AA9A6; }
+  .card .grip { position: absolute; right: -8px; bottom: -8px; width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: nwse-resize; display: none; touch-action: none; }
+  .card.selected .grip { display: block; }
+
+  /* ---------- зум ---------- */
+  #zoom { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 4px; z-index: 18; box-shadow: 0 4px 14px rgba(27,42,46,.08); }
+  #zoom button { border: none; background: transparent; color: var(--ink); width: 34px; height: 30px; border-radius: 7px; cursor: pointer; font-size: 16px; }
+  #zoom button:hover { background: var(--accent-soft); }
+  #zoom .pct { font-family: "IBM Plex Mono", monospace; font-size: 12px; min-width: 52px; text-align: center; color: var(--muted); }
+
+  #hint { position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 18; max-width: min(520px, calc(100vw - 180px)); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; color: var(--muted); font-size: 13px; line-height: 1.5; box-shadow: 0 4px 14px rgba(27,42,46,.08); }
+  #hint b { color: var(--ink); }
+  #hint.hidden { display: none; }
+
+  #status { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 30; background: var(--ink); color: #fff; border-radius: 10px; padding: 10px 16px; font-size: 13.5px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
+  #status.show { opacity: 1; }
+  #status.err { background: var(--danger); }
+
+  /* ---------- контекстное меню ---------- */
+  #menu { position: fixed; z-index: 40; min-width: 230px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(27,42,46,.18); padding: 6px; display: none; }
+  #menu.show { display: block; }
+  #menu .mi { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 12px; border-radius: 7px; cursor: pointer; font-size: 14px; }
+  #menu .mi:hover { background: var(--accent-soft); }
+  #menu .mi.danger { color: var(--danger); }
+  #menu .mi.danger:hover { background: #F8EBE5; }
+  #menu .mi.disabled { opacity: .4; pointer-events: none; }
+  #menu .mi .k { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); }
+  #menu .sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  #menu .mh { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); padding: 8px 12px 4px; }
+
+  /* ---------- диалог ---------- */
+  #dlg { position: fixed; inset: 0; z-index: 50; background: rgba(27,42,46,.35); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #dlg.show { display: flex; }
+  #dlg .box { background: var(--paper); border-radius: 14px; padding: 22px 24px; width: min(460px, 100%); box-shadow: 0 20px 50px rgba(27,42,46,.25); }
+  #dlg h3 { font-family: "Piazzolla", Georgia, serif; font-size: 20px; margin: 0 0 8px; }
+  #dlg p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; }
+  #dlg input[type=text] { width: 100%; border: 1.5px solid var(--line); border-radius: 9px; padding: 10px 12px; font-size: 15px; margin-bottom: 14px; -webkit-user-select: text; user-select: text; }
+  #dlg input[type=text]:focus { outline: none; border-color: var(--accent); }
+  #dlg .row { display: flex; gap: 8px; justify-content: flex-end; }
+  input[type=file] { display: none; }
+
+  @media (max-width: 720px) {
+    header { gap: 6px; padding: 0 8px; }
+    .brand { flex: 0 1 auto; overflow: hidden; }
+    .brand .eyebrow { display: none; }
+    .brand .name { font-size: 17px; overflow: hidden; text-overflow: ellipsis; }
+    .btn { padding: 7px 10px; font-size: 13px; }
+    .btn .long { display: none; }
+    #hint { display: none; }
+  }
+  @media (max-width: 400px) { .brand { display: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="eyebrow">КИТ · инструмент</span><span class="name">Холст</span></div>
+  <div class="spacer"></div>
+  <button class="btn primary" id="bAdd">+ Картинки<span class="long"> / PDF</span></button>
+  <button class="btn" id="bText">Текст</button>
+  <button class="btn" id="bExport">Экспорт ▾</button>
+  <button class="btn quiet" id="bMore">⋯</button>
+</header>
+
+<nav id="tabs"></nav>
+
+<div id="viewport">
+  <div id="world"></div>
+</div>
+
+<div id="zoom">
+  <button id="zOut" title="Уменьшить">−</button>
+  <div class="pct" id="zPct">100%</div>
+  <button id="zIn" title="Увеличить">+</button>
+  <button id="zFit" title="Вписать всё" style="width:auto;padding:0 10px;font-size:13px;">Вписать</button>
+</div>
+
+<div id="hint">
+  <b>Как работать.</b> Перетащите картинки или PDF на поле, либо нажмите «+ Картинки». Колесо или щипок — масштаб, перетаскивание пустого места — прокрутка.
+  Правая кнопка или долгое нажатие — меню карточки, поля или вкладки. Двойное нажатие на подпись — переименовать. Всё сохраняется в этом браузере автоматически.
+</div>
+
+<div id="status"></div>
+<div id="menu"></div>
+
+<div id="dlg">
+  <div class="box">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgText"></p>
+    <input type="text" id="dlgInput" autocomplete="off">
+    <div class="row">
+      <button class="btn quiet" id="dlgCancel">Отмена</button>
+      <button class="btn primary" id="dlgOk">Готово</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileAdd" multiple accept="image/*,application/pdf">
+<input type="file" id="fileReplace" accept="image/*">
+<input type="file" id="fileImport" accept="application/json,.json">
+
+<script>
+"use strict";
+/* =====================================================================
+   КИТ · Холст — самостоятельный инструмент: страницы, карточки-картинки,
+   текстовые заметки, контекстные меню, экспорт страниц в PDF и HTML.
+   Данные хранятся в IndexedDB этого браузера; на сервер ничего не уходит.
+   ===================================================================== */
+
+const $ = (id) => document.getElementById(id);
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// ---------- состояние ----------
+let state = null;                // { version, pages:[{id,name,cards:[],view:{x,y,s}}], active }
+const images = new Map();        // id -> { blob, url, w, h }
+let selected = null;             // id карточки
+let clipboardCard = null;        // копия карточки для вставки
+
+const viewport = $("viewport"), world = $("world");
+
+// ---------- IndexedDB ----------
+const DB_NAME = "kit_holst", DB_VER = 1;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, DB_VER);
+    r.onupgradeneeded = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv"); if (!db.objectStoreNames.contains("images")) db.createObjectStore("images"); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+let dbp = null; const db = () => (dbp ||= openDB());
+async function kvGet(k) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction("kv").objectStore("kv").get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); }
+async function kvSet(k, v) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function imgPut(id, blob) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction("images", "readwrite"); t.objectStore("images").put(blob, id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function imgDel(id) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction("images", "readwrite"); t.objectStore("images").delete(id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function imgAll() { const d = await db(); return new Promise((res, rej) => { const out = new Map(); const c = d.transaction("images").objectStore("images").openCursor(); c.onsuccess = () => { const cur = c.result; if (cur) { out.set(cur.key, cur.value); cur.continue(); } else res(out); }; c.onerror = () => rej(c.error); }); }
+async function dbClear() { const d = await db(); return new Promise((res, rej) => { const t = d.transaction(["kv", "images"], "readwrite"); t.objectStore("kv").clear(); t.objectStore("images").clear(); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+
+let saveTimer = null;
+function flush() { clearTimeout(saveTimer); saveTimer = null; return kvSet("state", state).catch(e => toast("Не удалось сохранить: " + e.message, true)); }
+// структурные изменения пишем сразу, перемещения и зум — с задержкой
+function save(now) { if (now) return flush(); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 250); }
+window.addEventListener("pagehide", () => { if (saveTimer) flush(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && saveTimer) flush(); });
+
+// ---------- страницы ----------
+const page = () => state.pages.find(p => p.id === state.active) || state.pages[0];
+function newPage(name) { return { id: uid(), name: name || ("Страница " + (state.pages.length + 1)), cards: [], view: { x: 60, y: 60, s: 1 } }; }
+function freshState() { const s = { version: 1, pages: [], active: null }; state = s; const p = newPage("Страница 1"); s.pages.push(p); s.active = p.id; return s; }
+
+function renderTabs() {
+  const nav = $("tabs"); nav.innerHTML = "";
+  state.pages.forEach((p, i) => {
+    const t = document.createElement("div"); t.className = "tab" + (p.id === state.active ? " active" : ""); t.dataset.id = p.id;
+    t.innerHTML = `<span class="n">${i + 1}</span><span class="t"></span>`; t.querySelector(".t").textContent = p.name;
+    t.addEventListener("click", () => switchPage(p.id));
+    t.addEventListener("dblclick", () => renamePage(p.id));
+    t.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, tabMenu(p.id)); });
+    longPress(t, (x, y) => openMenu(x, y, tabMenu(p.id)));
+    // перенос карточки на вкладку
+    t.addEventListener("dragover", e => { if (dragCardId) { e.preventDefault(); t.classList.add("dragover"); } });
+    t.addEventListener("dragleave", () => t.classList.remove("dragover"));
+    nav.appendChild(t);
+  });
+  const add = document.createElement("div"); add.className = "tab add"; add.textContent = "+ Страница";
+  add.addEventListener("click", () => addPage());
+  nav.appendChild(add);
+}
+let dragCardId = null;
+
+// долгое нажатие пальцем/стилусом на элементе → меню
+function longPress(el, fn) {
+  let timer = null, start = null;
+  el.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") return; start = { x: e.clientX, y: e.clientY }; clearTimeout(timer); timer = setTimeout(() => { timer = null; fn(start.x, start.y); }, 520); });
+  el.addEventListener("pointermove", (e) => { if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) { clearTimeout(timer); timer = null; } });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(t => el.addEventListener(t, () => { clearTimeout(timer); timer = null; }));
+}
+
+function switchPage(id) { if (id === state.active) return; selected = null; state.active = id; renderTabs(); renderWorld(); applyView(); save(); }
+function addPage(name) { const p = newPage(name); state.pages.push(p); state.active = p.id; selected = null; renderTabs(); renderWorld(); applyView(); save(); toast("Создана " + p.name); }
+async function renamePage(id) { const p = state.pages.find(x => x.id === id); const v = await ask("Название страницы", "", p.name); if (v == null) return; p.name = v.trim() || p.name; renderTabs(); save(); }
+function duplicatePage(id) {
+  const src = state.pages.find(x => x.id === id); const i = state.pages.indexOf(src);
+  const p = JSON.parse(JSON.stringify(src)); p.id = uid(); p.name = src.name + " (копия)"; p.cards.forEach(c => c.id = uid());
+  state.pages.splice(i + 1, 0, p); state.active = p.id; renderTabs(); renderWorld(); applyView(); save();
+}
+async function deletePage(id) {
+  const p = state.pages.find(x => x.id === id);
+  if (state.pages.length === 1) { if (!await confirmDlg("Очистить страницу?", "Это единственная страница: все карточки с неё будут удалены.")) return; p.cards = []; renderWorld(); save(); gcImages(); return; }
+  if (p.cards.length && !await confirmDlg("Удалить страницу?", `«${p.name}» и ${p.cards.length} карточек на ней будут удалены.`)) return;
+  const i = state.pages.indexOf(p); state.pages.splice(i, 1);
+  if (state.active === id) state.active = state.pages[Math.max(0, i - 1)].id;
+  renderTabs(); renderWorld(); applyView(); save(); gcImages();
+}
+function movePage(id, dir) { const i = state.pages.findIndex(x => x.id === id); const j = i + dir; if (j < 0 || j >= state.pages.length) return; const [p] = state.pages.splice(i, 1); state.pages.splice(j, 0, p); renderTabs(); save(); }
+
+// ---------- вид (пан/зум) ----------
+function applyView() { const v = page().view; world.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.s})`; $("zPct").textContent = Math.round(v.s * 100) + "%";
+  viewport.style.backgroundSize = `${24 * v.s}px ${24 * v.s}px`; viewport.style.backgroundPosition = `${v.x}px ${v.y}px`; }
+function zoomAt(factor, cx, cy) {
+  const v = page().view; const ns = clamp(v.s * factor, 0.05, 8); const r = viewport.getBoundingClientRect();
+  const px = (cx ?? r.left + r.width / 2) - r.left, py = (cy ?? r.top + r.height / 2) - r.top;
+  v.x = px - (px - v.x) * (ns / v.s); v.y = py - (py - v.y) * (ns / v.s); v.s = ns; applyView(); save();
+}
+function fitAll() {
+  const cards = page().cards; const r = viewport.getBoundingClientRect(); const v = page().view;
+  if (!cards.length) { v.x = 60; v.y = 60; v.s = 1; applyView(); save(); return; }
+  const b = bbox(cards, 40); const s = clamp(Math.min(r.width / b.w, r.height / b.h), 0.05, 2);
+  v.s = s; v.x = (r.width - b.w * s) / 2 - b.x * s; v.y = (r.height - b.h * s) / 2 - b.y * s; applyView(); save();
+}
+function bbox(cards, pad = 0) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  cards.forEach(c => { x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 26); x1 = Math.max(x1, c.x + c.w); y1 = Math.max(y1, c.y + c.h); });
+  return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
+}
+function toWorld(cx, cy) { const r = viewport.getBoundingClientRect(); const v = page().view; return { x: (cx - r.left - v.x) / v.s, y: (cy - r.top - v.y) / v.s }; }
+function viewCenterWorld() { const r = viewport.getBoundingClientRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); }
+
+// ---------- карточки ----------
+function cardEl(id) { return world.querySelector(`.card[data-id="${id}"]`); }
+function getCard(id) { return page().cards.find(c => c.id === id); }
+function renderWorld() {
+  world.innerHTML = "";
+  page().cards.slice().sort((a, b) => (a.z || 0) - (b.z || 0)).forEach(c => world.appendChild(buildCard(c)));
+}
+function buildCard(c) {
+  const el = document.createElement("div"); el.className = "card" + (c.id === selected ? " selected" : ""); el.dataset.id = c.id;
+  const label = document.createElement("div"); label.className = "label"; label.textContent = c.title || ""; el.appendChild(label);
+  if (c.type === "image") { const im = document.createElement("img"); const rec = images.get(c.img); im.src = rec ? rec.url : ""; im.alt = c.title || ""; im.draggable = false; el.appendChild(im); }
+  else { const tx = document.createElement("div"); tx.className = "text"; tx.textContent = c.text || ""; el.appendChild(tx); }
+  const grip = document.createElement("div"); grip.className = "grip"; el.appendChild(grip);
+  placeCard(el, c);
+  label.addEventListener("dblclick", (e) => { e.stopPropagation(); editLabel(c.id); });
+  if (c.type === "text") el.querySelector(".text").addEventListener("dblclick", (e) => { e.stopPropagation(); editText(c.id); });
+  return el;
+}
+function placeCard(el, c) { el.style.left = c.x + "px"; el.style.top = c.y + "px"; el.style.width = c.w + "px"; el.style.height = c.h + "px"; el.style.zIndex = c.z || 0; }
+function select(id) { if (selected && cardEl(selected)) cardEl(selected).classList.remove("selected"); selected = id; if (id && cardEl(id)) cardEl(id).classList.add("selected"); }
+function nextZ() { return page().cards.reduce((m, c) => Math.max(m, c.z || 0), 0) + 1; }
+
+function addCard(c) { c.id ||= uid(); c.z = nextZ(); page().cards.push(c); world.appendChild(buildCard(c)); select(c.id); save(true); return c; }
+function removeCard(id) { const cards = page().cards; const i = cards.findIndex(c => c.id === id); if (i < 0) return; cards.splice(i, 1); cardEl(id)?.remove(); if (selected === id) selected = null; save(true); gcImages(); }
+function duplicateCard(id) { const c = getCard(id); const d = JSON.parse(JSON.stringify(c)); d.id = uid(); d.x += 30; d.y += 30; d.title = c.title ? c.title + " (копия)" : ""; addCard(d); }
+function bringFront(id) { const c = getCard(id); c.z = nextZ(); placeCard(cardEl(id), c); save(); }
+function sendBack(id) { const c = getCard(id); const min = page().cards.reduce((m, k) => Math.min(m, k.z || 0), 0); c.z = min - 1; placeCard(cardEl(id), c); save(); }
+function naturalSize(id) { const c = getCard(id); const rec = images.get(c.img); if (!rec) return; c.w = rec.w; c.h = rec.h; placeCard(cardEl(id), c); save(); }
+function moveCardToPage(id, pageId) { const c = getCard(id); removeCardSilently(id); const p = state.pages.find(x => x.id === pageId); c.z = p.cards.reduce((m, k) => Math.max(m, k.z || 0), 0) + 1; p.cards.push(c); save(); toast(`Перенесено на «${p.name}»`); }
+function removeCardSilently(id) { const cards = page().cards; const i = cards.findIndex(c => c.id === id); cards.splice(i, 1); cardEl(id)?.remove(); if (selected === id) selected = null; }
+
+async function editLabel(id) {
+  const c = getCard(id); const lab = cardEl(id).querySelector(".label");
+  lab.contentEditable = "true"; lab.focus(); document.execCommand && document.execCommand("selectAll", false, null);
+  const done = () => { lab.contentEditable = "false"; c.title = lab.textContent.trim(); lab.textContent = c.title; save(); };
+  lab.addEventListener("blur", done, { once: true });
+  lab.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lab.blur(); } if (e.key === "Escape") { lab.textContent = c.title || ""; lab.blur(); } });
+}
+function editText(id) {
+  const c = getCard(id); const tx = cardEl(id).querySelector(".text");
+  tx.contentEditable = "true"; tx.focus();
+  const done = () => { tx.contentEditable = "false"; c.text = tx.innerText.replace(/\n$/, ""); tx.textContent = c.text; save(); };
+  tx.addEventListener("blur", done, { once: true });
+  tx.addEventListener("keydown", (e) => { if (e.key === "Escape") tx.blur(); e.stopPropagation(); });
+}
+function isEditing() { const a = document.activeElement; return a && (a.isContentEditable || a.tagName === "INPUT"); }
+
+// сборка мусора: картинки, на которые больше никто не ссылается
+async function gcImages() {
+  const used = new Set(); state.pages.forEach(p => p.cards.forEach(c => c.img && used.add(c.img)));
+  for (const [id, rec] of images) if (!used.has(id)) { URL.revokeObjectURL(rec.url); images.delete(id); await imgDel(id).catch(() => {}); }
+}
+
+// ---------- добавление файлов ----------
+async function loadImageRecord(blob) {
+  const url = URL.createObjectURL(blob);
+  const dims = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = rej; im.src = url; });
+  return { blob, url, w: dims.w, h: dims.h };
+}
+async function addImageBlob(blob, title, at) {
+  const id = uid(); const rec = await loadImageRecord(blob); images.set(id, rec); await imgPut(id, blob);
+  const maxW = 720; const k = Math.min(1, maxW / rec.w); const w = Math.round(rec.w * k), h = Math.round(rec.h * k);
+  const pos = at || nextFreeSpot(w, h);
+  return addCard({ type: "image", img: id, title: title || "", x: Math.round(pos.x), y: Math.round(pos.y), w, h });
+}
+function nextFreeSpot(w, h) {
+  const cards = page().cards; if (!cards.length) { const c = viewCenterWorld(); return { x: c.x - w / 2, y: c.y - h / 2 }; }
+  const b = bbox(cards); return { x: b.x + b.w + 60, y: b.y + 26 };
+}
+async function addFiles(files, at) {
+  const list = Array.from(files || []); if (!list.length) return;
+  let n = 0; let cursor = at ? { ...at } : null;
+  for (const f of list) {
+    try {
+      if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) { n += await addPdf(f, cursor); }
+      else if (f.type.startsWith("image/")) { const c = await addImageBlob(f, f.name.replace(/\.[^.]+$/, ""), cursor); n++; if (cursor) cursor = { x: c.x + c.w + 40, y: c.y }; }
+      else toast("Пропущен файл: " + f.name, true);
+    } catch (e) { toast("Не удалось добавить " + f.name + ": " + (e.message || e), true); }
+  }
+  if (n) { toast(`Добавлено карточек: ${n}`); if (n > 1 && !at) fitAll(); }
+}
+
+// PDF → карточки по страницам (pdf.js подгружается по запросу)
+let pdfjsP = null;
+function loadPdfJs() {
+  return pdfjsP ||= (async () => {
+    const srcs = ["https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.mjs", "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.mjs"];
+    const workers = ["https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.mjs", "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs"];
+    let lastErr;
+    for (let i = 0; i < srcs.length; i++) { try { const m = await import(srcs[i]); m.GlobalWorkerOptions.workerSrc = workers[i]; return m; } catch (e) { lastErr = e; } }
+    throw new Error("Библиотека PDF недоступна (нет сети?)");
+  })();
+}
+async function addPdf(file, cursor) {
+  toast("Читаю PDF…");
+  const pdfjs = await loadPdfJs();
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  const base = file.name.replace(/\.[^.]+$/, ""); let n = 0;
+  let pos = cursor || null; let rowStart = pos ? { ...pos } : null;
+  for (let i = 1; i <= doc.numPages; i++) {
+    const pg = await doc.getPage(i); const vp = pg.getViewport({ scale: 2 });
+    const cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    await pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+    const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.9));
+    const c = await addImageBlob(blob, `${base} · стр. ${i}`, pos); n++;
+    if (!pos) pos = { x: c.x, y: c.y }, rowStart = { ...pos };
+    pos = { x: c.x + c.w + 40, y: c.y };
+    if ((i % 4) === 0) pos = { x: rowStart.x, y: c.y + c.h + 80 };
+    toast(`PDF: страница ${i} из ${doc.numPages}`);
+  }
+  return n;
+}
+$("fileAdd").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+$("bAdd").addEventListener("click", () => $("fileAdd").click());
+$("bText").addEventListener("click", () => addTextCard());
+function addTextCard(at) { const pos = at || nextFreeSpot(360, 200); addCard({ type: "text", title: "Заметка", text: "", x: Math.round(pos.x), y: Math.round(pos.y), w: 360, h: 200 }); setTimeout(() => editText(selected), 30); }
+
+let replaceTarget = null;
+$("fileReplace").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f || !replaceTarget) return;
+  const c = getCard(replaceTarget); if (!c) return;
+  const id = uid(); const rec = await loadImageRecord(f); images.set(id, rec); await imgPut(id, f);
+  c.img = id; c.h = Math.round(c.w * rec.h / rec.w); const el = cardEl(c.id); el.querySelector("img").src = rec.url; placeCard(el, c); save(); gcImages();
+});
+
+// перетаскивание файлов на поле
+viewport.addEventListener("dragover", (e) => { e.preventDefault(); viewport.classList.add("dropping"); });
+viewport.addEventListener("dragleave", () => viewport.classList.remove("dropping"));
+viewport.addEventListener("drop", (e) => { e.preventDefault(); viewport.classList.remove("dropping"); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files, toWorld(e.clientX, e.clientY)); });
+
+// вставка из буфера
+document.addEventListener("paste", async (e) => {
+  if (isEditing()) return;
+  const items = Array.from(e.clipboardData?.items || []); const files = items.filter(i => i.kind === "file").map(i => i.getAsFile()).filter(Boolean);
+  if (files.length) { e.preventDefault(); await addFiles(files, viewCenterWorld()); return; }
+  const text = e.clipboardData?.getData("text/plain");
+  if (text && text.trim()) { e.preventDefault(); const p = viewCenterWorld(); addCard({ type: "text", title: "Заметка", text: text.trim(), x: Math.round(p.x - 180), y: Math.round(p.y - 100), w: 360, h: 200 }); return; }
+  if (clipboardCard) { e.preventDefault(); const d = JSON.parse(JSON.stringify(clipboardCard)); d.id = uid(); const p = viewCenterWorld(); d.x = Math.round(p.x - d.w / 2); d.y = Math.round(p.y - d.h / 2); addCard(d); }
+});
+async function pasteFromClipboardAPI(at) {
+  try {
+    if (!navigator.clipboard?.read) throw new Error("нет доступа к буферу");
+    const items = await navigator.clipboard.read(); const files = [];
+    for (const it of items) { const t = it.types.find(x => x.startsWith("image/")); if (t) files.push(new File([await it.getType(t)], "буфер." + t.split("/")[1], { type: t })); }
+    if (files.length) { await addFiles(files, at); return; }
+    const txt = await navigator.clipboard.readText().catch(() => "");
+    if (txt.trim()) { addCard({ type: "text", title: "Заметка", text: txt.trim(), x: Math.round(at.x), y: Math.round(at.y), w: 360, h: 200 }); return; }
+    if (clipboardCard) { const d = JSON.parse(JSON.stringify(clipboardCard)); d.id = uid(); d.x = Math.round(at.x); d.y = Math.round(at.y); addCard(d); return; }
+    toast("В буфере нет картинки или текста", true);
+  } catch (e) { toast("Вставка: " + (e.message || e) + ". Нажмите Ctrl+V / Cmd+V", true); }
+}
+
+// ---------- указатель: пан, перетаскивание, изменение размера, щипок ----------
+const pointers = new Map(); let gesture = null; // {type:'pan'|'drag'|'resize'|'pinch', ...}
+let pressTimer = null, pressStart = null;
+
+viewport.addEventListener("pointerdown", (e) => {
+  if (e.button === 2) return; // контекстное меню — отдельно
+  closeMenu(); if (isEditing()) document.activeElement.blur();
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  viewport.setPointerCapture(e.pointerId);
+  if (pointers.size === 2) { // щипок
+    const [a, b] = [...pointers.values()]; const v = page().view;
+    gesture = { type: "pinch", d0: Math.hypot(a.x - b.x, a.y - b.y), s0: v.s, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, x0: v.x, y0: v.y };
+    clearTimeout(pressTimer); return;
+  }
+  const grip = e.target.closest(".grip"); const card = e.target.closest(".card"); const v = page().view;
+  if (grip && card) { const c = getCard(card.dataset.id); gesture = { type: "resize", id: c.id, x0: e.clientX, y0: e.clientY, w0: c.w, h0: c.h, ratio: c.type === "image" ? c.w / c.h : null }; select(c.id); }
+  else if (card) { const c = getCard(card.dataset.id); select(c.id); gesture = { type: "drag", id: c.id, x0: e.clientX, y0: e.clientY, cx: c.x, cy: c.y, moved: false }; }
+  else { select(null); gesture = { type: "pan", x0: e.clientX, y0: e.clientY, vx: v.x, vy: v.y, moved: false }; viewport.classList.add("panning"); }
+  // долгое нажатие — меню
+  if (e.pointerType !== "mouse") {
+    pressStart = { x: e.clientX, y: e.clientY, target: card ? card.dataset.id : null };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { if (gesture && !gesture.moved) { const g = gesture; gesture = null; viewport.classList.remove("panning"); openMenu(pressStart.x, pressStart.y, pressStart.target ? cardMenu(pressStart.target) : canvasMenu(toWorld(pressStart.x, pressStart.y))); if (navigator.vibrate) navigator.vibrate(10); } }, 520);
+  }
+});
+viewport.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId)) return; pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!gesture) return; const v = page().view;
+  if (gesture.type === "pinch" && pointers.size === 2) {
+    const [a, b] = [...pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const ns = clamp(gesture.s0 * d / gesture.d0, 0.05, 8);
+    const r = viewport.getBoundingClientRect(); const cx = (a.x + b.x) / 2 - r.left, cy = (a.y + b.y) / 2 - r.top; const cx0 = gesture.cx - r.left, cy0 = gesture.cy - r.top;
+    v.x = cx - (cx0 - gesture.x0) * (ns / gesture.s0); v.y = cy - (cy0 - gesture.y0) * (ns / gesture.s0); v.s = ns; applyView(); return;
+  }
+  const dx = e.clientX - gesture.x0, dy = e.clientY - gesture.y0;
+  if (!gesture.moved && Math.hypot(dx, dy) > 4) { gesture.moved = true; clearTimeout(pressTimer); }
+  if (!gesture.moved) return;
+  if (gesture.type === "pan") { v.x = gesture.vx + dx; v.y = gesture.vy + dy; applyView(); }
+  else if (gesture.type === "drag") { const c = getCard(gesture.id); c.x = Math.round(gesture.cx + dx / v.s); c.y = Math.round(gesture.cy + dy / v.s); placeCard(cardEl(c.id), c); }
+  else if (gesture.type === "resize") { const c = getCard(gesture.id); let w = Math.max(60, gesture.w0 + dx / v.s), h = Math.max(40, gesture.h0 + dy / v.s); if (gesture.ratio) h = w / gesture.ratio; c.w = Math.round(w); c.h = Math.round(h); placeCard(cardEl(c.id), c); }
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId); clearTimeout(pressTimer);
+  if (gesture && (gesture.type === "drag" || gesture.type === "resize") && gesture.moved) save();
+  if (gesture && gesture.type === "pan" && gesture.moved) save();
+  if (gesture && gesture.type === "pinch") { if (pointers.size < 2) { gesture = null; save(); } return; }
+  gesture = null; viewport.classList.remove("panning");
+}
+viewport.addEventListener("pointerup", endPointer); viewport.addEventListener("pointercancel", endPointer);
+
+viewport.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) { zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY); }
+  else { const v = page().view; v.x -= e.deltaX; v.y -= e.deltaY; applyView(); save(); }
+}, { passive: false });
+viewport.addEventListener("dblclick", (e) => { if (e.target.closest(".card")) return; zoomAt(1.5, e.clientX, e.clientY); });
+viewport.addEventListener("contextmenu", (e) => { e.preventDefault(); const card = e.target.closest(".card"); if (card) { select(card.dataset.id); openMenu(e.clientX, e.clientY, cardMenu(card.dataset.id)); } else openMenu(e.clientX, e.clientY, canvasMenu(toWorld(e.clientX, e.clientY))); });
+
+$("zIn").addEventListener("click", () => zoomAt(1.25)); $("zOut").addEventListener("click", () => zoomAt(0.8)); $("zFit").addEventListener("click", fitAll);
+
+document.addEventListener("keydown", (e) => {
+  if (isEditing()) return; const mod = e.metaKey || e.ctrlKey;
+  if ((e.key === "Delete" || e.key === "Backspace") && selected) { e.preventDefault(); removeCard(selected); }
+  else if (mod && e.key.toLowerCase() === "d" && selected) { e.preventDefault(); duplicateCard(selected); }
+  else if (mod && e.key.toLowerCase() === "c" && selected) { clipboardCard = JSON.parse(JSON.stringify(getCard(selected))); toast("Карточка скопирована"); }
+  else if (e.key === "Escape") { select(null); closeMenu(); }
+  else if (e.key === "+" || e.key === "=") zoomAt(1.25); else if (e.key === "-") zoomAt(0.8); else if (e.key === "0") fitAll();
+  else if (selected && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) { e.preventDefault(); const c = getCard(selected); const st = e.shiftKey ? 20 : 2; if (e.key === "ArrowLeft") c.x -= st; if (e.key === "ArrowRight") c.x += st; if (e.key === "ArrowUp") c.y -= st; if (e.key === "ArrowDown") c.y += st; placeCard(cardEl(c.id), c); save(); }
+  else if (e.key === "Enter" && selected) editLabel(selected);
+});
+
+// ---------- контекстные меню ----------
+const menu = $("menu");
+function openMenu(x, y, items) {
+  menu.innerHTML = "";
+  items.forEach(it => {
+    if (it === "-") { const s = document.createElement("div"); s.className = "sep"; menu.appendChild(s); return; }
+    if (it.h) { const h = document.createElement("div"); h.className = "mh"; h.textContent = it.h; menu.appendChild(h); return; }
+    const d = document.createElement("div"); d.className = "mi" + (it.danger ? " danger" : "") + (it.disabled ? " disabled" : "");
+    d.innerHTML = `<span></span>${it.k ? `<span class="k">${it.k}</span>` : ""}`; d.firstChild.textContent = it.t;
+    d.addEventListener("click", () => { closeMenu(); it.f(); }); menu.appendChild(d);
+  });
+  menu.classList.add("show");
+  const r = menu.getBoundingClientRect(); const W = innerWidth, H = innerHeight;
+  menu.style.left = clamp(x, 8, W - r.width - 8) + "px"; menu.style.top = clamp(y, 8, H - r.height - 8) + "px";
+}
+function closeMenu() { menu.classList.remove("show"); }
+document.addEventListener("pointerdown", (e) => { if (!menu.contains(e.target)) closeMenu(); }, true);
+window.addEventListener("resize", closeMenu);
+
+function cardMenu(id) {
+  const c = getCard(id); const others = state.pages.filter(p => p.id !== state.active);
+  const items = [
+    { h: c.type === "image" ? "Карточка" : "Заметка" },
+    { t: "Переименовать", k: "Enter", f: () => editLabel(id) },
+    c.type === "text" ? { t: "Редактировать текст", f: () => editText(id) } : null,
+    { t: "Дублировать", k: "⌘D", f: () => duplicateCard(id) },
+    { t: "Копировать", k: "⌘C", f: () => { clipboardCard = JSON.parse(JSON.stringify(c)); toast("Скопировано"); } },
+    "-",
+    { t: "На передний план", f: () => bringFront(id) },
+    { t: "На задний план", f: () => sendBack(id) },
+    c.type === "image" ? { t: "Исходный размер", f: () => naturalSize(id) } : null,
+    c.type === "image" ? { t: "Заменить картинку…", f: () => { replaceTarget = id; $("fileReplace").click(); } } : null,
+    c.type === "image" ? { t: "Скачать картинку", f: () => downloadImage(id) } : null,
+    "-",
+    ...others.map(p => ({ t: "Перенести на «" + p.name + "»", f: () => moveCardToPage(id, p.id) })),
+    others.length ? "-" : null,
+    { t: "Удалить", k: "⌫", danger: true, f: () => removeCard(id) },
+  ];
+  return items.filter(Boolean);
+}
+function canvasMenu(at) {
+  const p = page();
+  return [
+    { h: p.name },
+    { t: "Добавить картинки / PDF…", f: () => { pendingAt = at; $("fileAdd").click(); } },
+    { t: "Добавить заметку", f: () => addTextCard(at) },
+    { t: "Вставить из буфера", k: "⌘V", f: () => pasteFromClipboardAPI(at) },
+    "-",
+    { t: "Разложить карточки по сетке", disabled: !p.cards.length, f: arrangeGrid },
+    { t: "Вписать всё", k: "0", f: fitAll },
+    "-",
+    { t: "Экспорт страницы в PDF", disabled: !p.cards.length, f: () => exportPagePdf(p.id, "page") },
+    { t: "Экспорт карточек в PDF (по слайду на карточку)", disabled: !p.cards.length, f: () => exportPagePdf(p.id, "cards") },
+    { t: "Экспорт страницы в HTML", disabled: !p.cards.length, f: () => exportPageHtml(p.id) },
+  ];
+}
+let pendingAt = null;
+$("fileAdd").addEventListener("change", () => { pendingAt = null; }, true);
+function tabMenu(id) {
+  const p = state.pages.find(x => x.id === id); const i = state.pages.indexOf(p);
+  return [
+    { h: p.name },
+    { t: "Переименовать", f: () => renamePage(id) },
+    { t: "Новая страница", f: () => addPage() },
+    { t: "Дублировать страницу", f: () => duplicatePage(id) },
+    "-",
+    { t: "Сдвинуть влево", disabled: i === 0, f: () => movePage(id, -1) },
+    { t: "Сдвинуть вправо", disabled: i === state.pages.length - 1, f: () => movePage(id, 1) },
+    "-",
+    { t: "Экспорт в PDF", disabled: !p.cards.length, f: () => exportPagePdf(id, "page") },
+    { t: "Экспорт карточек в PDF", disabled: !p.cards.length, f: () => exportPagePdf(id, "cards") },
+    { t: "Экспорт в HTML", disabled: !p.cards.length, f: () => exportPageHtml(id) },
+    "-",
+    { t: state.pages.length === 1 ? "Очистить страницу" : "Удалить страницу", danger: true, f: () => deletePage(id) },
+  ];
+}
+$("bExport").addEventListener("click", (e) => { const r = e.target.getBoundingClientRect(); const p = page(); openMenu(r.right - 260, r.bottom + 6, [
+  { h: "Страница «" + p.name + "»" },
+  { t: "PDF страницы (как на холсте)", disabled: !p.cards.length, f: () => exportPagePdf(p.id, "page") },
+  { t: "PDF по карточкам (слайды)", disabled: !p.cards.length, f: () => exportPagePdf(p.id, "cards") },
+  { t: "HTML страницы", disabled: !p.cards.length, f: () => exportPageHtml(p.id) },
+  "-",
+  { h: "Весь холст" },
+  { t: "PDF всех страниц", disabled: !state.pages.some(x => x.cards.length), f: () => exportAllPdf() },
+  { t: "Файл проекта (.json) — резервная копия", f: exportProject },
+]); });
+$("bMore").addEventListener("click", (e) => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 260, r.bottom + 6, [
+  { h: "Холст" },
+  { t: "Новая страница", f: () => addPage() },
+  { t: "Импорт проекта из файла…", f: () => $("fileImport").click() },
+  { t: $("hint").classList.contains("hidden") ? "Показать подсказку" : "Скрыть подсказку", f: () => { $("hint").classList.toggle("hidden"); localStorage.setItem("kit_holst_hint", $("hint").classList.contains("hidden") ? "0" : "1"); } },
+  "-",
+  { t: "Обнулить холст (удалить всё)", danger: true, f: resetAll },
+]); });
+
+function arrangeGrid() {
+  const cards = page().cards.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x)); if (!cards.length) return;
+  const cols = Math.ceil(Math.sqrt(cards.length)); const gap = 60; let x = 0, y = 0, rowH = 0, col = 0; const x0 = cards[0].x, y0 = cards[0].y;
+  cards.forEach(c => { c.x = Math.round(x0 + x); c.y = Math.round(y0 + y); rowH = Math.max(rowH, c.h); x += c.w + gap; col++; if (col === cols) { col = 0; x = 0; y += rowH + gap + 26; rowH = 0; } placeCard(cardEl(c.id), c); });
+  save(); fitAll();
+}
+
+// ---------- экспорт ----------
+function blobToDataURL(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); }); }
+function safeName(s) { return (s || "холст").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80); }
+async function deliver(blob, fname) {
+  if (navigator.canShare && typeof File !== "undefined") {
+    const file = new File([blob], fname, { type: blob.type });
+    if (navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
+  }
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+async function downloadImage(id) { const c = getCard(id); const rec = images.get(c.img); if (!rec) return; const ext = (rec.blob.type.split("/")[1] || "png").replace("jpeg", "jpg"); await deliver(rec.blob, safeName(c.title || "картинка") + "." + ext); }
+
+let jspdfP = null;
+function loadJsPdf() {
+  return jspdfP ||= new Promise((res, rej) => {
+    if (window.jspdf?.jsPDF) return res(window.jspdf.jsPDF);
+    const srcs = ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"]; let i = 0;
+    const tryNext = () => { if (i >= srcs.length) return rej(new Error("Библиотека PDF недоступна (нет сети?)")); const s = document.createElement("script"); s.src = srcs[i++]; s.onload = () => window.jspdf?.jsPDF ? res(window.jspdf.jsPDF) : tryNext(); s.onerror = tryNext; document.head.appendChild(s); };
+    tryNext();
+  });
+}
+function loadBitmap(rec) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = rec.url; }); }
+
+// растр страницы: карточки с подписями на белом фоне
+async function rasterPage(p, maxPx = 4200) {
+  const b = bbox(p.cards, 48); const scale = clamp(maxPx / Math.max(b.w, b.h), 0.25, 2);
+  const cv = document.createElement("canvas"); cv.width = Math.round(b.w * scale); cv.height = Math.round(b.h * scale);
+  const g = cv.getContext("2d"); g.fillStyle = "#FFFFFF"; g.fillRect(0, 0, cv.width, cv.height); g.scale(scale, scale); g.translate(-b.x, -b.y);
+  for (const c of p.cards.slice().sort((a, k) => (a.z || 0) - (k.z || 0))) await drawCard(g, c);
+  return { canvas: cv, w: b.w, h: b.h };
+}
+async function drawCard(g, c) {
+  g.save();
+  g.shadowColor = "rgba(27,42,46,.12)"; g.shadowBlur = 14; g.shadowOffsetY = 4; g.fillStyle = "#fff"; roundRect(g, c.x, c.y, c.w, c.h, 6); g.fill(); g.shadowColor = "transparent";
+  if (c.type === "image") { const rec = images.get(c.img); if (rec) { const im = await loadBitmap(rec); g.save(); roundRect(g, c.x, c.y, c.w, c.h, 6); g.clip(); g.drawImage(im, c.x, c.y, c.w, c.h); g.restore(); } }
+  else { g.fillStyle = "#FFFBEA"; roundRect(g, c.x, c.y, c.w, c.h, 6); g.fill(); g.fillStyle = "#1B2A2E"; g.font = "16px 'IBM Plex Sans', system-ui, sans-serif"; g.textBaseline = "top"; wrapText(g, c.text || "", c.x + 18, c.y + 16, c.w - 36, 24, c.y + c.h - 16); }
+  g.strokeStyle = "#C7D3D1"; g.lineWidth = 1; roundRect(g, c.x + .5, c.y + .5, c.w - 1, c.h - 1, 6); g.stroke();
+  if (c.title) { g.fillStyle = "#5A6E72"; g.font = "12px 'IBM Plex Mono', ui-monospace, Menlo, monospace"; g.textBaseline = "alphabetic"; g.fillText(c.title, c.x + 2, c.y - 10, c.w); }
+  g.restore();
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function wrapText(g, text, x, y, maxW, lh, yMax) {
+  for (const para of text.split("\n")) { let line = ""; for (const word of para.split(" ")) { const t = line ? line + " " + word : word; if (g.measureText(t).width > maxW && line) { g.fillText(line, x, y); y += lh; line = word; if (y > yMax) return; } else line = t; } g.fillText(line, x, y); y += lh; if (y > yMax) return; }
+}
+async function exportPagePdf(pageId, mode) {
+  const p = state.pages.find(x => x.id === pageId); if (!p.cards.length) return;
+  try {
+    toast("Готовлю PDF…"); const jsPDF = await loadJsPdf(); let doc = null;
+    const addPageRaster = async (pg) => {
+      const { canvas, w, h } = await rasterPage(pg); const wpt = w * 0.75, hpt = h * 0.75;
+      if (!doc) doc = new jsPDF({ unit: "pt", format: [wpt, hpt], orientation: wpt >= hpt ? "landscape" : "portrait", compress: true }); else doc.addPage([wpt, hpt], wpt >= hpt ? "landscape" : "portrait");
+      doc.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, wpt, hpt);
+    };
+    if (mode === "page") await addPageRaster(p);
+    else {
+      for (const c of p.cards.slice().sort((a, k) => (a.y - k.y) || (a.x - k.x))) {
+        const pad = 40, titleH = c.title ? 34 : 0; const w = c.w + pad * 2, h = c.h + pad * 2 + titleH; const scale = clamp(3000 / Math.max(w, h), 0.5, 2);
+        const cv = document.createElement("canvas"); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale); const g = cv.getContext("2d");
+        g.fillStyle = "#fff"; g.fillRect(0, 0, cv.width, cv.height); g.scale(scale, scale); g.translate(pad - c.x, pad + titleH - c.y);
+        await drawCard(g, c);
+        const wpt = w * 0.75, hpt = h * 0.75;
+        if (!doc) doc = new jsPDF({ unit: "pt", format: [wpt, hpt], orientation: wpt >= hpt ? "landscape" : "portrait", compress: true }); else doc.addPage([wpt, hpt], wpt >= hpt ? "landscape" : "portrait");
+        doc.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, wpt, hpt);
+      }
+    }
+    doc.setProperties({ title: p.name, creator: "КИТ · Холст" });
+    await deliver(doc.output("blob"), safeName(p.name) + (mode === "cards" ? " — карточки" : "") + ".pdf"); toast("PDF готов");
+  } catch (e) { toast("PDF: " + (e.message || e), true); }
+}
+async function exportAllPdf() {
+  try {
+    toast("Готовлю PDF всех страниц…"); const jsPDF = await loadJsPdf(); let doc = null;
+    for (const pg of state.pages) { if (!pg.cards.length) continue; const { canvas, w, h } = await rasterPage(pg); const wpt = w * 0.75, hpt = h * 0.75; const o = wpt >= hpt ? "landscape" : "portrait";
+      if (!doc) doc = new jsPDF({ unit: "pt", format: [wpt, hpt], orientation: o, compress: true }); else doc.addPage([wpt, hpt], o);
+      doc.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, wpt, hpt); }
+    if (!doc) return; doc.setProperties({ title: "Холст", creator: "КИТ · Холст" });
+    await deliver(doc.output("blob"), "Холст — все страницы.pdf"); toast("PDF готов");
+  } catch (e) { toast("PDF: " + (e.message || e), true); }
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+async function exportPageHtml(pageId) {
+  const p = state.pages.find(x => x.id === pageId); if (!p.cards.length) return;
+  try {
+    toast("Собираю HTML…");
+    const b = bbox(p.cards, 48); const parts = [];
+    for (const c of p.cards.slice().sort((a, k) => (a.z || 0) - (k.z || 0))) {
+      const style = `left:${c.x - b.x}px;top:${c.y - b.y}px;width:${c.w}px;height:${c.h}px;`;
+      let inner = "";
+      if (c.type === "image") { const rec = images.get(c.img); inner = rec ? `<img src="${await blobToDataURL(rec.blob)}" alt="${esc(c.title)}">` : ""; }
+      else inner = `<div class="text">${esc(c.text)}</div>`;
+      parts.push(`<div class="card" style="${style}">${c.title ? `<div class="label">${esc(c.title)}</div>` : ""}${inner}</div>`);
+    }
+    const html = `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(p.name)}</title>
+<style>
+  body{margin:0;background:#F4F7F6;color:#1B2A2E;font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;}
+  header{display:flex;align-items:baseline;gap:14px;padding:14px 20px;border-bottom:1px solid #D9E2E1;background:#FBFDFC;position:sticky;top:0;z-index:2}
+  header .eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#0E6E63}
+  header h1{font-family:Georgia,serif;font-size:20px;margin:0}
+  header .tools{margin-left:auto;display:flex;gap:6px}
+  header button{border:1.5px solid #0E6E63;background:transparent;color:#0E6E63;border-radius:8px;padding:6px 10px;font:inherit;font-weight:600;cursor:pointer}
+  #wrap{overflow:auto;padding:20px}
+  #page{position:relative;width:${b.w}px;height:${b.h}px;background:#fff;border:1px solid #D9E2E1;border-radius:8px;transform-origin:0 0;margin:0 auto}
+  .card{position:absolute;background:#fff;border:1px solid #C7D3D1;border-radius:6px;box-shadow:0 1px 2px rgba(27,42,46,.08),0 6px 18px rgba(27,42,46,.06)}
+  .card img{display:block;width:100%;height:100%;border-radius:5px}
+  .card .text{width:100%;height:100%;padding:16px 18px;box-sizing:border-box;overflow:hidden;font-size:16px;line-height:1.5;white-space:pre-wrap;background:#FFFBEA;border-radius:5px}
+  .card .label{position:absolute;left:2px;bottom:100%;margin-bottom:6px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#5A6E72;white-space:nowrap}
+  @media print{header{display:none}#wrap{padding:0}#page{border:none;border-radius:0}}
+  @page{size:${Math.round(b.w * 0.75)}pt ${Math.round(b.h * 0.75)}pt;margin:0}
+</style></head><body>
+<header><span class="eyebrow">КИТ · Холст</span><h1>${esc(p.name)}</h1><div class="tools"><button onclick="fit()">Вписать</button><button onclick="one()">100%</button><button onclick="window.print()">Печать / PDF</button></div></header>
+<div id="wrap"><div id="page">${parts.join("\n")}</div></div>
+<script>
+const pg=document.getElementById('page'),wrap=document.getElementById('wrap');let s=1;
+function setScale(k){s=k;pg.style.transform='scale('+k+')';wrap.style.height='';pg.style.marginBottom=(pg.offsetHeight*(k-1))+'px';pg.style.marginRight=(pg.offsetWidth*(k-1))+'px';}
+function fit(){setScale(Math.min(1,(wrap.clientWidth-40)/pg.offsetWidth));}
+function one(){setScale(1);}
+fit();addEventListener('resize',fit);
+<\/script></body></html>`;
+    await deliver(new Blob([html], { type: "text/html" }), safeName(p.name) + ".html"); toast("HTML готов");
+  } catch (e) { toast("HTML: " + (e.message || e), true); }
+}
+
+async function exportProject() {
+  try {
+    toast("Собираю файл проекта…");
+    const imgs = {}; for (const [id, rec] of images) imgs[id] = await blobToDataURL(rec.blob);
+    const blob = new Blob([JSON.stringify({ app: "kit-holst", version: 1, exported: new Date().toISOString(), state, images: imgs })], { type: "application/json" });
+    await deliver(blob, "Холст — проект " + new Date().toISOString().slice(0, 10) + ".json"); toast("Файл проекта готов");
+  } catch (e) { toast("Проект: " + (e.message || e), true); }
+}
+$("fileImport").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text()); if (data.app !== "kit-holst" || !data.state?.pages) throw new Error("это не файл проекта Холста");
+    const mode = await ask("Импорт проекта", "Введите «заменить», чтобы заменить текущий холст, или оставьте пустым, чтобы добавить страницы к текущим.", "");
+    if (mode == null) return;
+    const replace = mode.trim().toLowerCase() === "заменить";
+    const idMap = {};
+    for (const [oldId, dataUrl] of Object.entries(data.images || {})) { const blob = await (await fetch(dataUrl)).blob(); const id = uid(); idMap[oldId] = id; const rec = await loadImageRecord(blob); images.set(id, rec); await imgPut(id, blob); }
+    const pages = data.state.pages.map(p => ({ id: uid(), name: p.name, view: p.view || { x: 60, y: 60, s: 1 }, cards: (p.cards || []).map(c => ({ ...c, id: uid(), img: c.img ? idMap[c.img] : undefined })) }));
+    if (replace) { state.pages = pages; } else state.pages.push(...pages);
+    state.active = pages[0]?.id || state.pages[0].id; selected = null; renderTabs(); renderWorld(); applyView(); save(); await gcImages(); toast(`Импортировано страниц: ${pages.length}`);
+  } catch (err) { toast("Импорт: " + (err.message || err), true); }
+});
+async function resetAll() {
+  const v = await ask("Обнулить холст", "Будут удалены все страницы и карточки в этом браузере. Сначала можно сохранить резервную копию: Экспорт → Файл проекта. Для подтверждения введите «удалить».", "");
+  if (v == null || v.trim().toLowerCase() !== "удалить") return;
+  await dbClear(); for (const rec of images.values()) URL.revokeObjectURL(rec.url); images.clear(); freshState(); selected = null; renderTabs(); renderWorld(); applyView(); save(); toast("Холст обнулён");
+}
+
+// ---------- диалоги и уведомления ----------
+function ask(title, text, value) {
+  return new Promise((res) => {
+    $("dlgTitle").textContent = title; $("dlgText").textContent = text; $("dlgText").style.display = text ? "" : "none";
+    const inp = $("dlgInput"); inp.style.display = ""; inp.value = value ?? ""; $("dlg").classList.add("show"); setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    const done = (v) => { $("dlg").classList.remove("show"); ok.onclick = cancel.onclick = null; inp.onkeydown = null; res(v); };
+    const ok = $("dlgOk"), cancel = $("dlgCancel"); ok.textContent = "Готово"; ok.onclick = () => done(inp.value); cancel.onclick = () => done(null);
+    inp.onkeydown = (e) => { if (e.key === "Enter") done(inp.value); if (e.key === "Escape") done(null); };
+  });
+}
+function confirmDlg(title, text) {
+  return new Promise((res) => {
+    $("dlgTitle").textContent = title; $("dlgText").textContent = text; $("dlgText").style.display = ""; $("dlgInput").style.display = "none"; $("dlg").classList.add("show");
+    const done = (v) => { $("dlg").classList.remove("show"); ok.onclick = cancel.onclick = null; res(v); };
+    const ok = $("dlgOk"), cancel = $("dlgCancel"); ok.textContent = "Да"; ok.onclick = () => done(true); cancel.onclick = () => done(false);
+  });
+}
+let toastTimer = null;
+function toast(msg, err) { const s = $("status"); s.textContent = msg; s.className = "show" + (err ? " err" : ""); clearTimeout(toastTimer); toastTimer = setTimeout(() => s.className = "", err ? 5000 : 2200); }
+
+// ---------- запуск ----------
+(async function init() {
+  try {
+    const saved = await kvGet("state");
+    if (saved && saved.pages && saved.pages.length) { state = saved; if (!state.pages.find(p => p.id === state.active)) state.active = state.pages[0].id; } else freshState();
+    const blobs = await imgAll();
+    for (const [id, blob] of blobs) { try { images.set(id, await loadImageRecord(blob)); } catch (e) { /* битая картинка — пропускаем */ } }
+  } catch (e) { freshState(); toast("Хранилище недоступно, изменения не сохранятся: " + (e.message || e), true); }
+  if (localStorage.getItem("kit_holst_hint") === "0") $("hint").classList.add("hidden");
+  renderTabs(); renderWorld(); applyView();
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+})();
+</script>
+</body>
+</html>
