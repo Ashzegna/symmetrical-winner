@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>КИТ · Редактор инструкций</title>
+<style>
+  :root { --bg: #F4F7F6; --paper: #FBFDFC; --ink: #1B2A2E; --muted: #5A6E72; --line: #D9E2E1; --accent: #0E6E63; --accent-dark: #0B4A43; --accent-soft: #E3F0ED; --danger: #B3552F; --warn: #FFF3CD; --top: 54px; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; overflow: hidden; }
+  button, input, textarea, select { font-family: inherit; font-size: 14px; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  /* верхняя панель */
+  header { position: fixed; inset: 0 0 auto 0; height: var(--top); display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--paper); border-bottom: 1px solid var(--line); z-index: 20; }
+  .brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: 10px; }
+  .brand .eyebrow { font-family: ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); }
+  .brand .name { font-family: Georgia, "Times New Roman", serif; font-size: 19px; font-weight: 700; white-space: nowrap; }
+  #ptitle { border: 1px solid transparent; border-radius: 8px; padding: 6px 10px; font-size: 15px; font-weight: 600; background: transparent; min-width: 200px; max-width: 420px; flex: 1; }
+  #ptitle:hover, #ptitle:focus { border-color: var(--line); background: #fff; outline: none; }
+  .spacer { flex: 1; }
+  .btn { border: 1.5px solid var(--accent); background: transparent; color: var(--accent); border-radius: 9px; padding: 7px 12px; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--accent-soft); }
+  .btn.primary { background: var(--accent); color: #fff; } .btn.primary:hover { background: var(--accent-dark); }
+  .btn.quiet { border-color: var(--line); color: var(--muted); } .btn.quiet:hover { background: #fff; color: var(--ink); }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.sm { padding: 4px 9px; font-size: 12.5px; border-radius: 7px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  /* три панели */
+  main { position: fixed; top: var(--top); left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 300px 1fr 280px; }
+  .panel { overflow: auto; background: var(--paper); }
+  .panel h2 { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0; padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .n { color: var(--muted); font-weight: 400; }
+  .panel h2 .spacer { flex: 1; }
+  #left { border-right: 1px solid var(--line); }
+  #right { border-left: 1px solid var(--line); }
+  #center { background: var(--bg); padding: 18px 26px 40px; }
+  /* дерево */
+  .tree { padding: 0 8px 12px; }
+  .node { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; cursor: pointer; user-select: none; position: relative; }
+  .node:hover { background: #EEF3F2; }
+  .node.sel { background: var(--accent-soft); color: var(--accent-dark); font-weight: 600; }
+  .node.dropover { outline: 2px dashed var(--accent); }
+  .node .num { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); min-width: 30px; }
+  .node .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .cnt { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); }
+  .node .w { color: var(--danger); font-size: 12px; }
+  .node.step .t { font-weight: 400; } .node.step.sel .t { font-weight: 600; }
+  .node.d1 { margin-left: 16px; } .node.d2 { margin-left: 32px; } .node.d3 { margin-left: 48px; }
+  .tree .empty { color: var(--muted); padding: 10px 14px; line-height: 1.5; font-size: 13px; }
+  .treebar { display: flex; gap: 6px; padding: 6px 12px 10px; flex-wrap: wrap; }
+  /* редактор шага */
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h3 { margin: 0 0 12px; font-family: Georgia, serif; font-size: 20px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .field input[type=text], .field textarea, .field select { width: 100%; border: 1.5px solid var(--line); border-radius: 9px; padding: 9px 11px; background: #fff; color: var(--ink); }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+  .field textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .row .field { flex: 1; min-width: 200px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+  .hintline { font-size: 12.5px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+  .strip { display: flex; gap: 10px; flex-wrap: wrap; min-height: 90px; padding: 10px; border: 1.5px dashed var(--line); border-radius: 10px; background: #fff; }
+  .strip.dropover { border-color: var(--accent); background: var(--accent-soft); }
+  .strip .ph { color: var(--muted); font-size: 13px; align-self: center; padding: 8px; }
+  .thumb { position: relative; width: 132px; border: 1px solid var(--line); border-radius: 8px; background: #fff; overflow: hidden; cursor: grab; user-select: none; }
+  .thumb img { display: block; width: 100%; height: 92px; object-fit: cover; pointer-events: none; }
+  .thumb .cap { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--muted); padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb .x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: none; background: rgba(27,42,46,.75); color: #fff; font-size: 13px; line-height: 22px; cursor: pointer; display: none; padding: 0; }
+  .thumb:hover .x { display: block; }
+  .thumb.sel { outline: 2.5px solid var(--accent); }
+  .thumb.dragging { opacity: .4; }
+  .thumb .badge { position: absolute; left: 4px; top: 4px; background: rgba(27,42,46,.75); color: #fff; font-size: 10px; border-radius: 5px; padding: 1px 5px; font-family: ui-monospace, monospace; }
+  .pool { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 12px 14px; }
+  .pool .thumb { width: auto; } .pool .thumb img { height: 76px; }
+  .poolbar { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; align-items: center; }
+  .empty-center { color: var(--muted); text-align: center; padding: 60px 20px; line-height: 1.6; }
+  .empty-center b { color: var(--ink); }
+  .kbd { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  /* меню, диалоги, уведомления */
+  #menu { position: fixed; z-index: 40; min-width: 240px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(27,42,46,.18); padding: 6px; display: none; }
+  #menu.show { display: block; }
+  #menu .mi { display: flex; justify-content: space-between; gap: 14px; padding: 8px 12px; border-radius: 7px; cursor: pointer; font-size: 14px; }
+  #menu .mi:hover { background: var(--accent-soft); } #menu .mi.danger { color: var(--danger); } #menu .mi.disabled { opacity: .4; pointer-events: none; }
+  #menu .mi .k { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); }
+  #menu .sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  #menu .mh { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); padding: 8px 12px 4px; }
+  #dlg { position: fixed; inset: 0; z-index: 50; background: rgba(27,42,46,.35); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #dlg.show { display: flex; }
+  #dlg .box { background: var(--paper); border-radius: 14px; padding: 22px 24px; width: min(480px, 100%); box-shadow: 0 20px 50px rgba(27,42,46,.25); }
+  #dlg h3 { font-family: Georgia, serif; font-size: 20px; margin: 0 0 8px; }
+  #dlg p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+  #dlg input[type=text], #dlg select { width: 100%; border: 1.5px solid var(--line); border-radius: 9px; padding: 10px 12px; font-size: 15px; margin-bottom: 14px; background: #fff; }
+  #dlg .row { justify-content: flex-end; }
+  #status { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 60; background: var(--ink); color: #fff; border-radius: 10px; padding: 10px 16px; font-size: 13.5px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
+  #status.show { opacity: 1; } #status.err { background: var(--danger); }
+  /* предпросмотр */
+  #preview { position: fixed; inset: 0; z-index: 45; background: rgba(27,42,46,.72); display: none; flex-direction: column; }
+  #preview.show { display: flex; }
+  #preview .bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--paper); border-bottom: 1px solid var(--line); }
+  #preview .bar .t { font-weight: 600; margin-right: 8px; }
+  #preview .stage { flex: 1; display: flex; justify-content: center; padding: 16px; overflow: hidden; }
+  #preview iframe { border: none; background: #fff; width: 100%; height: 100%; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.3); transition: width .2s; }
+  #preview.mobile iframe { width: 390px; }
+  .seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; background: transparent; padding: 6px 12px; cursor: pointer; color: var(--muted); font-weight: 600; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  input[type=file] { display: none; }
+  body.dropping::after { content: "Отпустите — файлы будут добавлены в пул изображений"; position: fixed; inset: 8px; border: 3px dashed var(--accent); border-radius: 14px; background: rgba(227,240,237,.85); z-index: 100; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; color: var(--accent-dark); pointer-events: none; }
+  @media (max-width: 1000px) { main { grid-template-columns: 240px 1fr 220px; } .pool { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="eyebrow">КИТ · инструмент</span><span class="name">Редактор инструкций</span></div>
+  <input id="ptitle" type="text" placeholder="Название инструкции" title="Название инструкции">
+  <div class="spacer"></div>
+  <button class="btn quiet sm" id="bUndo" title="Отменить (Ctrl+Z)">↶</button>
+  <button class="btn quiet sm" id="bRedo" title="Повторить (Ctrl+Shift+Z)">↷</button>
+  <button class="btn primary" id="bImport">+ Изображения</button>
+  <button class="btn" id="bPreview">Предпросмотр</button>
+  <button class="btn" id="bBuild">Собрать ▾</button>
+  <button class="btn quiet" id="bProject">Проект ▾</button>
+</header>
+
+<main>
+  <section class="panel" id="left">
+    <h2>Структура <span class="n" id="treeCount"></span><span class="spacer"></span></h2>
+    <div class="treebar">
+      <button class="btn sm" id="bAddSection">+ Раздел</button>
+      <button class="btn sm quiet" id="bAddStep" title="Добавить шаг в выбранный раздел">+ Шаг</button>
+    </div>
+    <div class="tree" id="tree"></div>
+  </section>
+
+  <section class="panel" id="center"></section>
+
+  <section class="panel" id="right">
+    <h2>Пул изображений <span class="n" id="poolCount"></span></h2>
+    <div class="poolbar">
+      <button class="btn sm quiet" id="bSelAll">Выбрать все</button>
+      <button class="btn sm" id="bAssign" disabled>В выбранный шаг</button>
+      <button class="btn sm quiet" id="bAutoSplit" title="Создать по шагу на каждое изображение пула в выбранном разделе">Шаг на каждое</button>
+    </div>
+    <div class="pool" id="pool"></div>
+  </section>
+</main>
+
+<div id="preview">
+  <div class="bar">
+    <span class="t">Предпросмотр</span>
+    <div class="seg"><button id="pvDesk" class="on">Компьютер</button><button id="pvMob">Телефон</button></div>
+    <button class="btn sm quiet" id="pvRefresh">Обновить</button>
+    <div class="spacer"></div>
+    <button class="btn sm quiet" id="pvClose">Закрыть</button>
+  </div>
+  <div class="stage"><iframe id="pvFrame" title="Предпросмотр инструкции"></iframe></div>
+</div>
+
+<div id="menu"></div>
+<div id="status"></div>
+<div id="dlg"><div class="box"><h3 id="dlgTitle"></h3><p id="dlgText"></p><input type="text" id="dlgInput" autocomplete="off"><select id="dlgSelect"></select><div class="row"><button class="btn quiet" id="dlgCancel">Отмена</button><button class="btn primary" id="dlgOk">Готово</button></div></div></div>
+
+<input type="file" id="fileImages" multiple accept="image/*">
+<input type="file" id="fileReplace" accept="image/*">
+<input type="file" id="fileProject" accept=".zip,application/zip,application/json,.json">
+
+<script>
+"use strict";
+/* =====================================================================
+   КИТ · Редактор инструкций. Один файл, без сервера и без сети.
+   Проект → разделы → подразделы → шаги (изображения + текст). Сборка
+   автономного сайта (index.html + assets, hash-маршрутизация) или одного файла.
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+const natural = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
+
+// ---------- модель ----------
+let P = null;                 // { version, title, nodes:[], pool:[imgId], selected }
+const IMG = new Map();        // id -> { blob, thumbUrl, url, w, h, name, hash, size }
+let selId = null;             // выбранный узел
+let poolSel = new Set();      // выбранные в пуле
+const history = { undo: [], redo: [] };
+
+function newProject() { return { version: 1, title: "Инструкция по сборке", nodes: [], pool: [] }; }
+function node(type, title) { const n = { id: uid(), type, title: title || (type === "section" ? "Новый раздел" : "Новый шаг"), slug: "", text: "", warning: false, images: [], children: [] }; n.slug = slugify(n.title, n.id); return n; }
+function walk(nodes, fn, depth = 0, parent = null) { for (const n of nodes) { fn(n, depth, parent); if (n.children.length) walk(n.children, fn, depth + 1, n); } }
+function flat() { const out = []; walk(P.nodes, (n, d, p) => out.push({ n, d, p })); return out; }
+function find(id) { let r = null; walk(P.nodes, n => { if (n.id === id) r = n; }); return r; }
+function parentOf(id) { let r = null; walk(P.nodes, (n, d, p) => { if (n.id === id) r = p; }); return r; }
+function siblings(id) { const p = parentOf(id); return p ? p.children : P.nodes; }
+function depthOf(id) { let r = 0; walk(P.nodes, (n, d) => { if (n.id === id) r = d; }); return r; }
+function steps() { return flat().filter(x => x.n.type === "step").map(x => x.n); }
+function usedImages() { const s = new Set(); walk(P.nodes, n => n.images.forEach(i => s.add(i))); return s; }
+const TR = { а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"c",ч:"ch",ш:"sh",щ:"sch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya" };
+function slugify(title, id) {
+  let s = String(title || "").toLowerCase().split("").map(ch => TR[ch] ?? ch).join("").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  if (!s) s = "razdel";
+  const taken = new Set(); walk(P ? P.nodes : [], n => { if (n.id !== id) taken.add(n.slug); });
+  let out = s, k = 2; while (taken.has(out)) out = s + "-" + (k++); return out;
+}
+function numbering() { // «1», «1.2», «1.2.3»
+  const map = {}; const rec = (nodes, prefix) => nodes.forEach((n, i) => { const num = prefix ? prefix + "." + (i + 1) : String(i + 1); map[n.id] = num; rec(n.children, num); }); rec(P.nodes, ""); return map;
+}
+
+// ---------- IndexedDB ----------
+const DB_NAME = "kit_instrukcii", DB_VER = 1; let dbp = null;
+function openDB() { return dbp ||= new Promise((res, rej) => { const r = indexedDB.open(DB_NAME, DB_VER); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains("kv")) d.createObjectStore("kv"); if (!d.objectStoreNames.contains("images")) d.createObjectStore("images"); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function tx(store, mode, fn) { const d = await openDB(); return new Promise((res, rej) => { const t = d.transaction(store, mode); const r = fn(t.objectStore(t.objectStoreNames[0])); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); }
+const kvGet = (k) => tx("kv", "readonly", s => s.get(k));
+const kvSet = (k, v) => tx("kv", "readwrite", s => s.put(v, k));
+const imgPut = (id, rec) => tx("images", "readwrite", s => s.put(rec, id));
+const imgDel = (id) => tx("images", "readwrite", s => s.delete(id));
+async function imgAll() { const d = await openDB(); return new Promise((res, rej) => { const out = new Map(); const c = d.transaction("images").objectStore("images").openCursor(); c.onsuccess = () => { const cur = c.result; if (cur) { out.set(cur.key, cur.value); cur.continue(); } else res(out); }; c.onerror = () => rej(c.error); }); }
+async function dbClear() { const d = await openDB(); return new Promise((res, rej) => { const t = d.transaction(["kv", "images"], "readwrite"); t.objectStore("kv").clear(); t.objectStore("images").clear(); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+let saveTimer = null;
+function flush() { clearTimeout(saveTimer); saveTimer = null; return kvSet("project", P).catch(e => toast("Не удалось сохранить: " + e.message, true)); }
+function save(now) { if (now) return flush(); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 300); }
+addEventListener("pagehide", () => { if (saveTimer) flush(); });
+
+// ---------- история (отмена/повтор) структуры ----------
+function snapshot() { return JSON.stringify({ title: P.title, nodes: P.nodes, pool: P.pool }); }
+let lastSnap = null; // состояние после последнего зафиксированного изменения
+function commit() { const cur = snapshot(); if (lastSnap !== null && cur !== lastSnap) { history.undo.push(lastSnap); if (history.undo.length > 60) history.undo.shift(); history.redo.length = 0; } lastSnap = cur; updateHistoryButtons(); }
+function restore(s) { const o = JSON.parse(s); P.title = o.title; P.nodes = o.nodes; P.pool = o.pool; lastSnap = s; if (selId && !find(selId)) selId = null; renderAll(); save(true); }
+function undo() { if (!history.undo.length) return; history.redo.push(snapshot()); restore(history.undo.pop()); updateHistoryButtons(); toast("Отменено"); }
+function redo() { if (!history.redo.length) return; history.undo.push(snapshot()); restore(history.redo.pop()); updateHistoryButtons(); }
+function updateHistoryButtons() { $("bUndo").disabled = !history.undo.length; $("bRedo").disabled = !history.redo.length; }
+
+// ---------- изображения ----------
+async function sha256(buf) { const h = await crypto.subtle.digest("SHA-256", buf); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join(""); }
+function decode(blob) { return new Promise((res, rej) => { const url = URL.createObjectURL(blob); const im = new Image(); im.onload = () => res({ im, url }); im.onerror = () => { URL.revokeObjectURL(url); rej(new Error("файл не читается как изображение")); }; im.src = url; }); }
+async function makeThumb(im, max = 320) { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k)); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); return new Promise(r => c.toBlob(r, "image/jpeg", 0.82)); }
+function attach(id, rec) { rec.url = URL.createObjectURL(rec.blob); rec.thumbUrl = URL.createObjectURL(rec.thumb); IMG.set(id, rec); }
+async function importFiles(fileList) {
+  const files = Array.from(fileList || []).filter(f => f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name));
+  if (!files.length) { toast("Среди файлов нет изображений", true); return; }
+  files.sort((a, b) => natural.compare(a.name, b.name)); // натуральная сортировка: 2 < 10
+  const hashes = new Set([...IMG.values()].map(r => r.hash)); let added = 0, dup = 0, broken = 0;
+  toast(`Импорт: ${files.length} файлов…`);
+  for (const f of files) {
+    try {
+      const buf = await f.arrayBuffer(); const hash = await sha256(buf);
+      if (hashes.has(hash)) { dup++; continue; }
+      const { im, url } = await decode(f); URL.revokeObjectURL(url);
+      const thumb = await makeThumb(im); const id = uid();
+      const rec = { blob: f, thumb, w: im.naturalWidth, h: im.naturalHeight, name: f.name, hash, size: f.size };
+      await imgPut(id, rec); attach(id, rec); P.pool.push(id); hashes.add(hash); added++;
+    } catch (e) { broken++; }
+  }
+  const parts = [`Добавлено: ${added}`]; if (dup) parts.push(`дубликатов пропущено: ${dup}`); if (broken) parts.push(`не читаются: ${broken}`);
+  toast(parts.join(" · "), broken > 0); commit(); renderPool(); renderTree(); save(true);
+}
+$("fileImages").addEventListener("change", e => { importFiles(e.target.files); e.target.value = ""; });
+$("bImport").addEventListener("click", () => $("fileImages").click());
+document.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); document.body.classList.add("dropping"); } });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
+document.addEventListener("drop", e => { document.body.classList.remove("dropping"); if (e.dataTransfer?.files?.length) { e.preventDefault(); if (!e.target.closest(".strip, .node")) importFiles(e.dataTransfer.files); } });
+async function gcImages() { const used = usedImages(); for (const id of [...IMG.keys()]) if (!used.has(id) && !P.pool.includes(id)) { const r = IMG.get(id); URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); IMG.delete(id); await imgDel(id).catch(() => {}); } }
+
+// ---------- дерево ----------
+function renderTree() {
+  const t = $("tree"); t.innerHTML = ""; const num = numbering(); let total = 0;
+  if (!P.nodes.length) t.innerHTML = `<div class="empty">Структуры пока нет. Нажмите «+ Раздел», затем «+ Шаг», и перетащите изображения из пула на шаг.</div>`;
+  walk(P.nodes, (n, d) => {
+    total++;
+    const el = document.createElement("div"); el.className = `node d${d} ${n.type}` + (n.id === selId ? " sel" : ""); el.dataset.id = n.id;
+    el.innerHTML = `<span class="num">${esc(num[n.id])}</span><span class="t"></span>${n.warning ? '<span class="w" title="Важное предупреждение">▲</span>' : ""}<span class="cnt">${n.images.length ? n.images.length + " ф." : ""}</span>`;
+    el.querySelector(".t").textContent = n.title;
+    el.addEventListener("click", () => selectNode(n.id));
+    el.addEventListener("dblclick", () => renameNode(n.id));
+    el.addEventListener("contextmenu", e => { e.preventDefault(); selectNode(n.id); openMenu(e.clientX, e.clientY, nodeMenu(n.id)); });
+    el.addEventListener("dragover", e => { if (dragImgs.length) { e.preventDefault(); el.classList.add("dropover"); } });
+    el.addEventListener("dragleave", () => el.classList.remove("dropover"));
+    el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("dropover"); if (dragImgs.length) { assignImages(n.id, dragImgs); dragImgs = []; } });
+    t.appendChild(el);
+  });
+  $("treeCount").textContent = total ? `· ${P.nodes.length} разд. · ${steps().length} шагов` : "";
+  $("bAddStep").disabled = !selId;
+}
+function selectNode(id) { selId = id; renderTree(); renderCenter(); $("bAssign").disabled = !(selId && poolSel.size); }
+function topAncestor(id) { let n = find(id); let p; while (n && (p = parentOf(n.id))) n = p; return n; }
+function addSection() { const n = node("section"); const top = selId ? topAncestor(selId) : null; const i = top ? P.nodes.indexOf(top) : -1;
+  P.nodes.splice(i >= 0 ? i + 1 : P.nodes.length, 0, n); commit(); selectNode(n.id); save(true); renameNode(n.id); }
+function addStep(parentId) { let p = parentId ? find(parentId) : (selId ? find(selId) : null); if (p && p.type === "step") p = parentOf(p.id);
+  if (!p) { if (!P.nodes.length) { P.nodes.push(node("section", "Раздел 1")); } p = P.nodes[P.nodes.length - 1]; }
+  const n = node("step", "Шаг " + (p.children.filter(c => c.type === "step").length + 1)); p.children.push(n); commit(); selectNode(n.id); save(true); return n; }
+async function renameNode(id) { const n = find(id); const v = await ask("Название", n.type === "section" ? "Раздел" : "Шаг", n.title); if (v == null) return; n.title = v.trim() || n.title; if (!n.slugManual) n.slug = slugify(n.title, n.id); commit(); renderAll(); save(true); }
+async function deleteNode(id) { const n = find(id); const cnt = flat().filter(x => x.n === n || isDescendant(n, x.n)).length; const imgs = []; walk([n], k => imgs.push(...k.images));
+  if ((cnt > 1 || imgs.length) && !await confirmDlg("Удалить?", `«${n.title}»: ${cnt} узлов, ${imgs.length} изображений. Изображения вернутся в пул.`)) return;
+  const arr = siblings(id); arr.splice(arr.indexOf(n), 1); P.pool.push(...imgs); if (selId === id) selId = null; commit(); renderAll(); save(true); }
+function isDescendant(root, n) { let r = false; walk(root.children, k => { if (k === n) r = true; }); return r; }
+function moveNode(id, dir) { const arr = siblings(id); const i = arr.findIndex(n => n.id === id); const j = i + dir; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; commit(); renderAll(); save(true); }
+function indentNode(id) { const arr = siblings(id); const i = arr.findIndex(n => n.id === id); if (i === 0) return; const prev = arr[i - 1]; if (prev.type !== "section") { toast("Вложить можно только в раздел", true); return; }
+  const n = arr[i]; if (n.type === "section" && depthOf(prev.id) >= 1) { toast("Максимум два уровня разделов", true); return; }
+  if (n.type === "section" && n.children.some(c => c.type === "section")) { toast("Раздел с подразделами нельзя вложить глубже", true); return; }
+  arr.splice(i, 1); prev.children.push(n); commit(); renderAll(); save(true); }
+function outdentNode(id) { const p = parentOf(id); if (!p) return; const gp = parentOf(p.id); const arr = gp ? gp.children : P.nodes; const n = find(id); if (n.type === "step" && !gp) { toast("Шаг должен быть внутри раздела", true); return; }
+  p.children.splice(p.children.indexOf(n), 1); arr.splice(arr.indexOf(p) + 1, 0, n); commit(); renderAll(); save(true); }
+function nodeMenu(id) {
+  const n = find(id); const arr = siblings(id); const i = arr.indexOf(n);
+  return [
+    { h: n.type === "section" ? "Раздел " + numbering()[id] : "Шаг " + numbering()[id] },
+    { t: "Переименовать", k: "F2", f: () => renameNode(id) },
+    n.type === "section" ? { t: "Добавить шаг внутрь", f: () => addStep(id) } : null,
+    n.type === "section" && depthOf(id) === 0 ? { t: "Добавить подраздел", f: () => { const s = node("section", "Подраздел"); n.children.push(s); commit(); selectNode(s.id); save(true); renameNode(s.id); } } : null,
+    { t: "Дублировать", f: () => { const d = JSON.parse(JSON.stringify(n)); walk([d], k => { k.id = uid(); k.slug = slugify(k.title + " копия", k.id); }); d.title += " (копия)"; d.images = []; walk(d.children, k => k.images = []); arr.splice(i + 1, 0, d); commit(); renderAll(); save(true); } },
+    "-",
+    { t: "Выше", k: "Alt+↑", disabled: i === 0, f: () => moveNode(id, -1) },
+    { t: "Ниже", k: "Alt+↓", disabled: i === arr.length - 1, f: () => moveNode(id, 1) },
+    { t: "Вложить в предыдущий раздел", k: "Alt+→", disabled: i === 0, f: () => indentNode(id) },
+    { t: "Вынести на уровень выше", k: "Alt+←", disabled: !parentOf(id), f: () => outdentNode(id) },
+    "-",
+    { t: "Удалить", k: "⌫", danger: true, f: () => deleteNode(id) },
+  ].filter(Boolean);
+}
+$("bAddSection").addEventListener("click", addSection);
+$("bAddStep").addEventListener("click", () => addStep());
+
+// ---------- назначение изображений ----------
+let dragImgs = [];
+function assignImages(nodeId, ids, index) {
+  const n = find(nodeId); if (!n) return; const list = ids.filter(id => IMG.has(id));
+  for (const id of list) { const owner = ownerOf(id); if (owner && owner !== n) owner.images.splice(owner.images.indexOf(id), 1); const pi = P.pool.indexOf(id); if (pi >= 0) P.pool.splice(pi, 1); const cur = n.images.indexOf(id); if (cur >= 0) n.images.splice(cur, 1); }
+  if (index == null || index > n.images.length) n.images.push(...list); else n.images.splice(index, 0, ...list);
+  poolSel.clear(); commit(); renderAll(); save(true); toast(`В «${n.title}»: ${list.length} изображений`);
+}
+function ownerOf(imgId) { let r = null; walk(P.nodes, n => { if (n.images.includes(imgId)) r = n; }); return r; }
+function unassign(nodeId, imgId) { const n = find(nodeId); n.images.splice(n.images.indexOf(imgId), 1); P.pool.push(imgId); commit(); renderAll(); save(true); }
+function thumbEl(id, opts = {}) {
+  const r = IMG.get(id); const el = document.createElement("div"); el.className = "thumb" + (poolSel.has(id) && opts.pool ? " sel" : ""); el.dataset.id = id; el.draggable = true;
+  el.innerHTML = `<img alt=""><div class="cap"></div>${opts.index != null ? `<span class="badge">${opts.index + 1}</span>` : ""}<button class="x" title="${opts.pool ? "Удалить из проекта" : "Вернуть в пул"}">×</button>`;
+  el.querySelector("img").src = r.thumbUrl; el.querySelector(".cap").textContent = r.name; el.title = `${r.name} · ${r.w}×${r.h}`;
+  el.addEventListener("dragstart", e => { dragImgs = opts.pool && poolSel.has(id) ? [...poolSel] : [id]; dragImgs.src = opts.node || null; el.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); });
+  el.addEventListener("dragend", () => { el.classList.remove("dragging"); setTimeout(() => dragImgs = [], 50); });
+  el.querySelector(".x").addEventListener("click", e => { e.stopPropagation(); if (opts.pool) removeImage(id); else unassign(opts.node, id); });
+  el.addEventListener("dblclick", () => window.open(r.url, "_blank"));
+  return el;
+}
+async function removeImage(id) { const r = IMG.get(id); if (!await confirmDlg("Удалить изображение?", `${r.name} будет удалено из проекта.`)) return; P.pool.splice(P.pool.indexOf(id), 1); poolSel.delete(id); commit(); await gcImages(); renderAll(); save(true); }
+function renderPool() {
+  const pool = $("pool"); pool.innerHTML = ""; const list = P.pool.slice().sort((a, b) => natural.compare(IMG.get(a)?.name || "", IMG.get(b)?.name || ""));
+  P.pool = list.filter(id => IMG.has(id));
+  if (!P.pool.length) pool.innerHTML = `<div class="empty" style="grid-column:1/-1;color:var(--muted);padding:10px 4px;line-height:1.5;font-size:13px;">Все изображения распределены. Добавьте новые кнопкой «+ Изображения» или перетащите файлы в окно.</div>`;
+  for (const id of P.pool) { const el = thumbEl(id, { pool: true }); el.addEventListener("click", e => { if (e.shiftKey && lastPoolClick) { const a = P.pool.indexOf(lastPoolClick), b = P.pool.indexOf(id); P.pool.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(x => poolSel.add(x)); } else if (poolSel.has(id)) poolSel.delete(id); else poolSel.add(id); lastPoolClick = id; renderPool(); }); pool.appendChild(el); }
+  $("poolCount").textContent = `· ${P.pool.length}` + (poolSel.size ? ` · выбрано ${poolSel.size}` : "");
+  $("bAssign").disabled = !(selId && poolSel.size); $("bSelAll").textContent = poolSel.size === P.pool.length && P.pool.length ? "Снять выбор" : "Выбрать все";
+}
+let lastPoolClick = null;
+$("bSelAll").addEventListener("click", () => { if (poolSel.size === P.pool.length) poolSel.clear(); else P.pool.forEach(id => poolSel.add(id)); renderPool(); });
+$("bAssign").addEventListener("click", () => { if (!selId) return; let target = find(selId); if (target.type === "section") { target = addStep(target.id); } assignImages(target.id, [...poolSel]); });
+$("bAutoSplit").addEventListener("click", () => {
+  if (!P.pool.length) { toast("Пул пуст", true); return; } let sec = selId && find(selId); if (sec && sec.type === "step") sec = parentOf(sec.id); if (!sec) { sec = node("section", "Раздел " + (P.nodes.length + 1)); P.nodes.push(sec); }
+  const ids = P.pool.slice(); let k = sec.children.filter(c => c.type === "step").length;
+  for (const id of ids) { const st = node("step", "Шаг " + (++k)); st.images.push(id); sec.children.push(st); }
+  P.pool = []; commit(); selectNode(sec.id); renderAll(); save(true); toast(`Создано шагов: ${ids.length}`);
+});
+
+// ---------- центральная панель: редактор узла ----------
+function renderCenter() {
+  const c = $("center"); const n = selId && find(selId);
+  if (!n) { c.innerHTML = `<div class="empty-center"><b>Выберите раздел или шаг слева.</b><br>Порядок работы: импортируйте изображения → создайте разделы и шаги → перетащите изображения на шаги → напишите пояснения → «Предпросмотр» → «Собрать».<br><br>Перетаскивать можно сразу несколько: отметьте их в пуле щелчком, <span class="kbd">Shift</span> — диапазон.</div>`; return; }
+  const num = numbering()[n.id]; const p = parentOf(n.id);
+  c.innerHTML = `
+    <div class="card">
+      <h3>${n.type === "section" ? "Раздел" : "Шаг"} ${esc(num)}${p ? ` <span style="color:var(--muted);font-size:14px;font-family:inherit;font-weight:400">· в «${esc(p.title)}»</span>` : ""}</h3>
+      <div class="row">
+        <div class="field" style="flex:2"><label>Заголовок</label><input type="text" id="fTitle"></div>
+        <div class="field"><label>Адрес раздела (слаг)</label><input type="text" id="fSlug" class="mono" spellcheck="false"></div>
+      </div>
+      <div class="field"><label>Пояснение к шагу</label><textarea id="fText" placeholder="Что сделать, какие инструменты, на что обратить внимание. Пустая строка — новый абзац, строка с «- » — пункт списка."></textarea>
+        <div class="hintline"><a href="#" id="insLink" style="color:var(--accent)">Вставить ссылку на раздел…</a> · внутренние ссылки записываются как <span class="kbd">[[адрес|текст]]</span></div></div>
+      <label class="check"><input type="checkbox" id="fWarn"> Важное предупреждение (выделить на странице)</label>
+    </div>
+    <div class="card">
+      <h3>Изображения <span style="color:var(--muted);font-size:14px;font-family:inherit;font-weight:400">${n.images.length ? `· ${n.images.length}` : ""}</span></h3>
+      <div class="strip" id="strip">${n.images.length ? "" : '<div class="ph">Перетащите сюда изображения из пула или выберите их в пуле и нажмите «В выбранный шаг». Порядок меняется перетаскиванием.</div>'}</div>
+      <div class="hintline">Первое изображение показывается крупно, остальные — лентой под ним. Двойной щелчок по миниатюре открывает оригинал.</div>
+    </div>`;
+  $("fTitle").value = n.title; $("fSlug").value = n.slug; $("fText").value = n.text || ""; $("fWarn").checked = !!n.warning;
+  let editTimer = null; const onEdit = () => { n.title = $("fTitle").value.trim() || n.title; n.text = $("fText").value; n.warning = $("fWarn").checked; renderTree(); save(); };
+  $("fTitle").addEventListener("input", () => { clearTimeout(editTimer); editTimer = setTimeout(() => { onEdit(); if (!n.slugManual) { n.slug = slugify(n.title, n.id); $("fSlug").value = n.slug; } }, 250); });
+  $("fTitle").addEventListener("blur", () => commit());
+  $("fText").addEventListener("input", () => { clearTimeout(editTimer); editTimer = setTimeout(onEdit, 250); });
+  $("fText").addEventListener("blur", () => commit());
+  $("fWarn").addEventListener("change", () => { onEdit(); commit(); });
+  $("fSlug").addEventListener("change", () => { const v = $("fSlug").value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, ""); n.slug = v ? slugify(v, n.id) : slugify(n.title, n.id); n.slugManual = !!v; $("fSlug").value = n.slug; commit(); save(true); });
+  $("insLink").addEventListener("click", async e => { e.preventDefault(); const opts = flat().filter(x => x.n !== n).map(x => ({ v: x.n.slug, t: `${numbering()[x.n.id]} ${x.n.title}` })); if (!opts.length) { toast("Других разделов пока нет", true); return; }
+    const v = await pick("Ссылка на раздел", "Ссылка вставится в место курсора.", opts); if (!v) return; const tx = $("fText"); const label = opts.find(o => o.v === v).t.replace(/^\S+\s/, ""); const ins = `[[${v}|${label}]]`; const s = tx.selectionStart ?? tx.value.length; tx.value = tx.value.slice(0, s) + ins + tx.value.slice(tx.selectionEnd ?? s); tx.focus(); tx.selectionStart = tx.selectionEnd = s + ins.length; onEdit(); commit(); });
+  const strip = $("strip");
+  n.images.forEach((id, i) => { if (!IMG.has(id)) return; const el = thumbEl(id, { node: n.id, index: i }); el.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }); el.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); if (dragImgs.length) { const idx = n.images.indexOf(id); assignImages(n.id, dragImgs, idx); dragImgs = []; } }); strip.appendChild(el); });
+  strip.addEventListener("dragover", e => { if (dragImgs.length) { e.preventDefault(); strip.classList.add("dropover"); } });
+  strip.addEventListener("dragleave", () => strip.classList.remove("dropover"));
+  strip.addEventListener("drop", e => { e.preventDefault(); strip.classList.remove("dropover"); if (dragImgs.length) { assignImages(n.id, dragImgs); dragImgs = []; } else if (e.dataTransfer.files.length) { importThenAssign(e.dataTransfer.files, n.id); } });
+}
+async function importThenAssign(files, nodeId) { const before = new Set(P.pool); await importFiles(files); const fresh = P.pool.filter(id => !before.has(id)); if (fresh.length) assignImages(nodeId, fresh); }
+function renderAll() { renderTree(); renderCenter(); renderPool(); $("ptitle").value = P.title; }
+$("ptitle").addEventListener("change", () => { P.title = $("ptitle").value.trim() || "Инструкция"; commit(); save(true); });
+
+// ---------- клавиатура ----------
+document.addEventListener("keydown", e => {
+  const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName); const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "z") { if (editing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveProjectZip(); return; }
+  if (editing) return;
+  if (e.key === "F2" && selId) renameNode(selId);
+  else if ((e.key === "Delete" || e.key === "Backspace") && selId) { e.preventDefault(); deleteNode(selId); }
+  else if (e.altKey && selId && e.key === "ArrowUp") moveNode(selId, -1); else if (e.altKey && selId && e.key === "ArrowDown") moveNode(selId, 1);
+  else if (e.altKey && selId && e.key === "ArrowRight") indentNode(selId); else if (e.altKey && selId && e.key === "ArrowLeft") outdentNode(selId);
+  else if (e.key === "Escape") { closeMenu(); $("preview").classList.remove("show"); }
+});
+
+// ---------- меню и диалоги ----------
+const menu = $("menu");
+function openMenu(x, y, items) {
+  menu.innerHTML = "";
+  items.forEach(it => { if (it === "-") { const s = document.createElement("div"); s.className = "sep"; menu.appendChild(s); return; } if (it.h) { const h = document.createElement("div"); h.className = "mh"; h.textContent = it.h; menu.appendChild(h); return; }
+    const d = document.createElement("div"); d.className = "mi" + (it.danger ? " danger" : "") + (it.disabled ? " disabled" : ""); d.innerHTML = `<span></span>${it.k ? `<span class="k">${esc(it.k)}</span>` : ""}`; d.firstChild.textContent = it.t; d.addEventListener("click", () => { closeMenu(); it.f(); }); menu.appendChild(d); });
+  menu.classList.add("show"); const r = menu.getBoundingClientRect(); menu.style.left = Math.min(x, innerWidth - r.width - 8) + "px"; menu.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+}
+function closeMenu() { menu.classList.remove("show"); }
+document.addEventListener("pointerdown", e => { if (!menu.contains(e.target)) closeMenu(); }, true);
+function dialog({ title, text, input, select, okText }) {
+  return new Promise(res => {
+    $("dlgTitle").textContent = title; $("dlgText").textContent = text || ""; $("dlgText").style.display = text ? "" : "none";
+    const inp = $("dlgInput"), sel = $("dlgSelect"); inp.style.display = input != null ? "" : "none"; sel.style.display = select ? "" : "none";
+    if (input != null) inp.value = input; if (select) { sel.innerHTML = ""; select.forEach(o => { const op = document.createElement("option"); op.value = o.v; op.textContent = o.t; sel.appendChild(op); }); }
+    $("dlgOk").textContent = okText || "Готово"; $("dlg").classList.add("show"); setTimeout(() => { if (input != null) { inp.focus(); inp.select(); } else if (select) sel.focus(); }, 30);
+    const done = v => { $("dlg").classList.remove("show"); $("dlgOk").onclick = $("dlgCancel").onclick = inp.onkeydown = null; res(v); };
+    $("dlgOk").onclick = () => done(input != null ? inp.value : select ? sel.value : true); $("dlgCancel").onclick = () => done(null);
+    inp.onkeydown = e => { if (e.key === "Enter") done(inp.value); if (e.key === "Escape") done(null); };
+  });
+}
+const ask = (title, text, value) => dialog({ title, text, input: value ?? "" });
+const pick = (title, text, options) => dialog({ title, text, select: options });
+const confirmDlg = (title, text) => dialog({ title, text, okText: "Да" }).then(v => !!v);
+let toastTimer = null;
+function toast(msg, err) { const s = $("status"); s.textContent = msg; s.className = "show" + (err ? " err" : ""); clearTimeout(toastTimer); toastTimer = setTimeout(() => s.className = "", err ? 5000 : 2400); }
+
+// ---------- текст шага → HTML ----------
+function textToHtml(text, slugs) {
+  const inline = (s) => esc(s).replace(/\[\[([a-z0-9-]+)(?:\|([^\]]*))?\]\]/g, (m, slug, label) => slugs.has(slug) ? `<a href="#/${slug}" class="xref">${esc(label || slug)}</a>` : `<span class="xref-missing" title="раздел не найден">${esc(label || slug)}</span>`).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const out = []; let list = null;
+  for (const raw of String(text || "").split(/\r?\n/)) { const line = raw.trim(); if (/^[-•*]\s+/.test(line)) { if (!list) { list = []; } list.push(`<li>${inline(line.replace(/^[-•*]\s+/, ""))}</li>`); continue; } if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; } if (line) out.push(`<p>${inline(line)}</p>`); }
+  if (list) out.push(`<ul>${list.join("")}</ul>`); return out.join("");
+}
+
+// ---------- компиляция ----------
+async function resizeTo(rec, maxW) {
+  const { im, url } = await decode(rec.blob); const k = Math.min(1, maxW / im.naturalWidth); const c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+  c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+  let blob = await new Promise(r => c.toBlob(r, "image/webp", 0.86)); let ext = "webp";
+  if (!blob || blob.type !== "image/webp") { blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.86)); ext = "jpg"; } // Safari не кодирует WebP — фолбэк JPEG
+  return { blob, ext, w: c.width, h: c.height };
+}
+function blobToDataURL(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); }); }
+async function buildManifest(mode /* 'files' | 'inline' | 'preview' */, files) {
+  const slugs = new Set(); walk(P.nodes, n => slugs.add(n.slug)); const num = numbering(); const stepList = steps(); const pages = []; let progress = 0;
+  const rec = async (nodes, parent, crumbs) => {
+    for (const n of nodes) {
+      const imgs = [];
+      for (let i = 0; i < n.images.length; i++) {
+        const r = IMG.get(n.images[i]); if (!r) continue; const base = `${n.slug}-${i + 1}`;
+        if (mode === "preview") { imgs.push({ src: r.thumbUrl, full: r.url, w: r.w, h: r.h, alt: r.name }); continue; }
+        const s800 = await resizeTo(r, 800); const s1600 = r.w > 900 ? await resizeTo(r, 1600) : null;
+        if (mode === "files") { files[`assets/img/${base}_800.${s800.ext}`] = s800.blob; if (s1600) files[`assets/img/${base}_1600.${s1600.ext}`] = s1600.blob;
+          imgs.push({ src: `assets/img/${base}_800.${s800.ext}`, full: s1600 ? `assets/img/${base}_1600.${s1600.ext}` : `assets/img/${base}_800.${s800.ext}`, w: s800.w, h: s800.h, alt: r.name }); }
+        else { imgs.push({ src: await blobToDataURL(s800.blob), full: s1600 ? await blobToDataURL(s1600.blob) : null, w: s800.w, h: s800.h, alt: r.name }); }
+        toast(`Обработка изображений… ${++progress}`);
+      }
+      pages.push({ id: n.id, slug: n.slug, type: n.type, num: num[n.id], title: n.title, html: textToHtml(n.text, slugs), warning: !!n.warning, images: imgs, parent, crumbs: crumbs.slice(), children: n.children.map(c => c.slug), stepIndex: n.type === "step" ? stepList.indexOf(n) + 1 : 0 });
+      await rec(n.children, n.slug, crumbs.concat([{ slug: n.slug, title: n.title }]));
+    }
+  };
+  await rec(P.nodes, null, []);
+  return { title: P.title, generated: new Date().toISOString(), stepsTotal: stepList.length, pages, tree: P.nodes.map(n => ({ slug: n.slug, children: n.children.map(c => ({ slug: c.slug, children: c.children.map(k => ({ slug: k.slug, children: [] })) })) })) };
+}
+
+// стили и скрипт собранной инструкции
+const SITE_CSS = `
+:root{--ink:#1B2A2E;--muted:#5A6E72;--line:#D9E2E1;--accent:#0E6E63;--soft:#E3F0ED;--bg:#F4F7F6;--paper:#fff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.55}
+a{color:var(--accent)}button{font:inherit}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--paper);border-bottom:1px solid var(--line)}
+.top .burger{display:none;border:1px solid var(--line);background:#fff;border-radius:8px;width:38px;height:36px;cursor:pointer;font-size:18px}
+.top h1{font-size:17px;margin:0;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top .prog{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+.bar{height:3px;background:var(--line)}.bar i{display:block;height:100%;background:var(--accent);transition:width .25s}
+.wrap{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 60px)}
+nav.side{background:var(--paper);border-right:1px solid var(--line);padding:14px 10px 30px;position:sticky;top:60px;height:calc(100vh - 60px);overflow:auto}
+nav.side .search{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:8px 11px;font-size:14px;margin-bottom:10px}
+nav.side .search:focus{outline:none;border-color:var(--accent)}
+nav.side ul{list-style:none;margin:0;padding:0}nav.side li ul{margin-left:14px}
+nav.side a{display:flex;gap:8px;padding:6px 10px;border-radius:8px;color:var(--ink);text-decoration:none;font-size:14px}
+nav.side a .n{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--muted);min-width:34px;padding-top:2px}
+nav.side a:hover{background:#EEF3F2}nav.side a.on{background:var(--soft);color:#0B4A43;font-weight:600}
+nav.side li.hide{display:none}
+main{padding:22px 30px 60px;max-width:1000px;width:100%}
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:8px}.crumbs a{color:var(--muted);text-decoration:none}.crumbs a:hover{color:var(--accent)}
+h2.title{font-family:Georgia,"Times New Roman",serif;font-size:30px;margin:0 0 6px;line-height:1.15}
+.kicker{font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.warn{border-left:4px solid #B3552F;background:#FFF3CD;border-radius:0 10px 10px 0;padding:12px 16px;margin:16px 0;font-weight:600}
+.text{margin:14px 0 20px}.text p{margin:0 0 10px}.text ul{margin:0 0 10px 20px}.xref-missing{color:#B3552F;border-bottom:1px dashed}
+figure{margin:0 0 14px}figure img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:zoom-in}
+figure figcaption{font-size:12.5px;color:var(--muted);margin-top:6px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.gallery img{aspect-ratio:4/3;object-fit:cover}
+.toc-inline{display:grid;gap:8px;margin:16px 0}.toc-inline a{display:flex;gap:10px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink)}.toc-inline a:hover{border-color:var(--accent)}.toc-inline .n{font-family:ui-monospace,Menlo,monospace;color:var(--muted);min-width:34px}
+.pager{display:flex;justify-content:space-between;gap:12px;margin-top:30px;padding-top:18px;border-top:1px solid var(--line)}
+.pager a{flex:1;max-width:48%;display:block;padding:12px 14px;border:1.5px solid var(--accent);border-radius:10px;text-decoration:none;color:var(--accent);font-weight:600}.pager a.next{text-align:right;background:var(--accent);color:#fff}.pager a small{display:block;font-weight:400;font-size:12px;opacity:.75}
+.pager .none{flex:1;max-width:48%}
+.home .lead{color:var(--muted);margin:0 0 18px}
+.lb{position:fixed;inset:0;background:rgba(10,20,22,.94);display:none;z-index:50;touch-action:none}.lb.show{display:block}
+.lb img{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(1);max-width:96vw;max-height:92vh;user-select:none;-webkit-user-drag:none;transition:transform .05s}
+.lb .ctl{position:fixed;top:12px;right:12px;display:flex;gap:6px;z-index:2}.lb .ctl button{width:42px;height:42px;border-radius:10px;border:none;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer}.lb .ctl button:hover{background:rgba(255,255,255,.28)}
+.lb .cap{position:fixed;left:0;right:0;bottom:12px;text-align:center;color:#cfd8d6;font-size:13px}
+.lb .arr{position:fixed;top:50%;transform:translateY(-50%);width:46px;height:64px;border:none;background:rgba(255,255,255,.12);color:#fff;font-size:26px;cursor:pointer;border-radius:10px}.lb .arr.l{left:10px}.lb .arr.r{right:10px}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}nav.side{position:fixed;left:0;top:0;bottom:0;width:min(86vw,320px);height:100vh;z-index:20;transform:translateX(-105%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.25)}nav.side.open{transform:none}.top .burger{display:block}main{padding:16px 16px 60px}h2.title{font-size:24px}.pager a{max-width:none}.pager a small{display:none}}
+`;
+const SITE_JS = `
+(function(){
+var M=window.MANIFEST;var byslug={};M.pages.forEach(function(p){byslug[p.slug]=p});var order=M.pages.map(function(p){return p.slug});
+var side=document.querySelector('nav.side'),main=document.querySelector('main'),prog=document.getElementById('prog'),bar=document.getElementById('bar'),search=document.getElementById('q');
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function tocList(items){return '<ul>'+items.map(function(it){var p=byslug[it.slug];if(!p)return '';return '<li data-t="'+esc(p.title.toLowerCase())+'"><a href="#/'+p.slug+'" data-s="'+p.slug+'"><span class="n">'+esc(p.num)+'</span><span>'+esc(p.title)+'</span></a>'+(it.children.length?tocList(it.children):'')+'</li>'}).join('')+'</ul>'}
+document.getElementById('toc').innerHTML=tocList(M.tree);
+function cur(){var h=location.hash.replace(/^#\\/?/,'');return h&&byslug[h]?h:''}
+function render(){var s=cur();side.classList.remove('open');side.querySelectorAll('a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-s')===s)});
+ if(!s){document.title=M.title;prog.textContent=M.stepsTotal?M.stepsTotal+' шагов':'';bar.style.width='0%';
+  main.innerHTML='<div class="home"><div class="kicker">Инструкция по сборке</div><h2 class="title">'+esc(M.title)+'</h2><p class="lead">Оглавление. Выберите раздел или начните с первого шага.</p><div class="toc-inline">'+M.pages.filter(function(p){return !p.parent}).map(function(p){return '<a href="#/'+p.slug+'"><span class="n">'+esc(p.num)+'</span><span>'+esc(p.title)+'</span></a>'}).join('')+'</div>'+(order.length?'<div class="pager"><span class="none"></span><a class="next" href="#/'+order[0]+'">Начать <small>'+esc(byslug[order[0]].title)+'</small></a></div>':'')+'</div>';window.scrollTo(0,0);return}
+ var p=byslug[s],i=order.indexOf(s),prev=i>0?byslug[order[i-1]]:null,next=i<order.length-1?byslug[order[i+1]]:null;
+ document.title=p.title+' — '+M.title;
+ if(p.stepIndex){prog.textContent='Шаг '+p.stepIndex+' из '+M.stepsTotal;bar.style.width=(100*p.stepIndex/M.stepsTotal)+'%'}else{prog.textContent=p.type==='section'?'Раздел '+p.num:'';bar.style.width=(100*(i+1)/order.length)+'%'}
+ var crumbs='<div class="crumbs"><a href="#/">Оглавление</a>'+p.crumbs.map(function(c){return ' › <a href="#/'+c.slug+'">'+esc(c.title)+'</a>'}).join('')+'</div>';
+ var imgs='';if(p.images.length){var f=p.images[0];imgs+='<figure><img src="'+f.src+'" data-full="'+(f.full||f.src)+'" data-i="0" alt="'+esc(f.alt)+'" width="'+f.w+'" height="'+f.h+'" loading="lazy"></figure>';
+  if(p.images.length>1)imgs+='<div class="gallery">'+p.images.slice(1).map(function(im,k){return '<figure><img src="'+im.src+'" data-full="'+(im.full||im.src)+'" data-i="'+(k+1)+'" alt="'+esc(im.alt)+'" loading="lazy"></figure>'}).join('')+'</div>'}
+ var kids=p.children.length?'<div class="toc-inline">'+p.children.map(function(cs){var c=byslug[cs];return '<a href="#/'+c.slug+'"><span class="n">'+esc(c.num)+'</span><span>'+esc(c.title)+'</span></a>'}).join('')+'</div>':'';
+ main.innerHTML=crumbs+'<div class="kicker">'+(p.type==='step'?'Шаг '+esc(p.num):'Раздел '+esc(p.num))+'</div><h2 class="title">'+esc(p.title)+'</h2>'+(p.warning?'<div class="warn">▲ Внимание. Прочитайте пояснение до начала работ.</div>':'')+(p.html?'<div class="text">'+p.html+'</div>':'')+imgs+kids+
+  '<div class="pager">'+(prev?'<a class="prev" href="#/'+prev.slug+'">‹ Назад <small>'+esc(prev.title)+'</small></a>':'<a class="prev" href="#/">‹ Оглавление</a>')+(next?'<a class="next" href="#/'+next.slug+'">Дальше › <small>'+esc(next.title)+'</small></a>':'<span class="none"></span>')+'</div>';
+ window.scrollTo(0,0);
+ main.querySelectorAll('figure img').forEach(function(im){im.addEventListener('click',function(){openLb(p,+im.getAttribute('data-i'))})});
+ var on=side.querySelector('a.on');if(on)on.scrollIntoView({block:'nearest'});
+}
+window.addEventListener('hashchange',render);render();
+document.getElementById('burger').addEventListener('click',function(){side.classList.toggle('open')});
+document.addEventListener('click',function(e){if(side.classList.contains('open')&&!side.contains(e.target)&&e.target.id!=='burger')side.classList.remove('open')});
+if(search)search.addEventListener('input',function(){var q=search.value.trim().toLowerCase();var lis=Array.prototype.slice.call(side.querySelectorAll('li'));
+ lis.forEach(function(li){li.classList.remove('hide');li.classList.toggle('m',!!q&&li.getAttribute('data-t').indexOf(q)>=0)});if(!q)return;
+ /* показываем совпавшие, их потомков и их предков */
+ lis.forEach(function(li){var show=li.classList.contains('m')||li.querySelector('li.m')||(li.parentElement&&li.parentElement.closest('li.m'));li.classList.toggle('hide',!show)})});
+document.addEventListener('keydown',function(e){if(lb.classList.contains('show')){if(e.key==='Escape')closeLb();if(e.key==='ArrowRight')lbNav(1);if(e.key==='ArrowLeft')lbNav(-1);return}
+ if(e.target.tagName==='INPUT')return;var s=cur(),i=order.indexOf(s);if(e.key==='ArrowRight'&&i<order.length-1)location.hash='#/'+order[i+1];if(e.key==='ArrowLeft')location.hash=i>0?'#/'+order[i-1]:'#/'});
+/* лайтбокс с зумом */
+var lb=document.getElementById('lb'),lbImg=lb.querySelector('img'),lbCap=lb.querySelector('.cap'),lbPage=null,lbI=0,scale=1,tx=0,ty=0;
+function openLb(p,i){lbPage=p;lbI=i;show()}function show(){var im=lbPage.images[lbI];lbImg.src=im.full||im.src;lbCap.textContent=(lbI+1)+' / '+lbPage.images.length+(im.alt?' · '+im.alt:'');scale=1;tx=ty=0;apply();lb.classList.add('show')}
+function closeLb(){lb.classList.remove('show')}function lbNav(d){lbI=(lbI+d+lbPage.images.length)%lbPage.images.length;show()}
+function apply(){lbImg.style.transform='translate(calc(-50% + '+tx+'px), calc(-50% + '+ty+'px)) scale('+scale+')'}
+function zoom(k,cx,cy){var ns=Math.min(6,Math.max(1,scale*k));if(ns===1){tx=ty=0}scale=ns;apply()}
+lb.querySelector('.x').addEventListener('click',closeLb);lb.querySelector('.plus').addEventListener('click',function(){zoom(1.4)});lb.querySelector('.minus').addEventListener('click',function(){zoom(1/1.4)});
+lb.querySelector('.arr.l').addEventListener('click',function(){lbNav(-1)});lb.querySelector('.arr.r').addEventListener('click',function(){lbNav(1)});
+lb.addEventListener('click',function(e){if(e.target===lb)closeLb()});
+lb.addEventListener('wheel',function(e){e.preventDefault();zoom(Math.exp(-e.deltaY*0.002))},{passive:false});
+lbImg.addEventListener('dblclick',function(){scale>1?zoom(0.0001):zoom(2.5)});
+var pts={},pinch=null,drag=null;
+lbImg.addEventListener('pointerdown',function(e){e.preventDefault();lbImg.setPointerCapture(e.pointerId);pts[e.pointerId]={x:e.clientX,y:e.clientY};var k=Object.keys(pts);
+ if(k.length===2){var a=pts[k[0]],b=pts[k[1]];pinch={d0:Math.hypot(a.x-b.x,a.y-b.y),s0:scale};drag=null}else if(scale>1){drag={x:e.clientX,y:e.clientY,tx:tx,ty:ty}}});
+lbImg.addEventListener('pointermove',function(e){if(!pts[e.pointerId])return;pts[e.pointerId]={x:e.clientX,y:e.clientY};var k=Object.keys(pts);
+ if(pinch&&k.length===2){var a=pts[k[0]],b=pts[k[1]];scale=Math.min(6,Math.max(1,pinch.s0*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d0));apply()}else if(drag){tx=drag.tx+(e.clientX-drag.x);ty=drag.ty+(e.clientY-drag.y);apply()}});
+function up(e){delete pts[e.pointerId];if(Object.keys(pts).length<2)pinch=null;if(!Object.keys(pts).length)drag=null}
+lbImg.addEventListener('pointerup',up);lbImg.addEventListener('pointercancel',up);
+})();`;
+function siteIndexHtml(manifest, inline) {
+  const css = inline ? `<style>${SITE_CSS}</style>` : `<link rel="stylesheet" href="assets/css/style.css">`;
+  const js = inline ? `<script>window.MANIFEST=${JSON.stringify(manifest).replace(/<\//g, "<\\/")};<\/script><script>${SITE_JS.replace(/<\//g, "<\\/")}<\/script>` : `<script src="assets/js/manifest.js"><\/script><script src="assets/js/app.js"><\/script>`;
+  return `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(manifest.title)}</title>${css}</head>
+<body>
+<div class="top"><button class="burger" id="burger" aria-label="Оглавление">☰</button><h1><a href="#/" style="color:inherit;text-decoration:none">${esc(manifest.title)}</a></h1><span class="prog" id="prog"></span></div>
+<div class="bar"><i id="bar" style="width:0%"></i></div>
+<div class="wrap">
+  <nav class="side"><input class="search" id="q" type="search" placeholder="Поиск по разделам…"><div id="toc"></div></nav>
+  <main></main>
+</div>
+<div class="lb" id="lb"><div class="ctl"><button class="minus" title="Уменьшить">−</button><button class="plus" title="Увеличить">+</button><button class="x" title="Закрыть">✕</button></div><button class="arr l">‹</button><img alt=""><button class="arr r">›</button><div class="cap"></div></div>
+${js}
+</body></html>`;
+}
+async function compile(mode) { // 'files' → {path: Blob|string}, 'inline' → html string, 'preview' → html string
+  const files = {}; const manifest = await buildManifest(mode, files);
+  if (mode === "files") { files["index.html"] = siteIndexHtml(manifest, false); files["assets/css/style.css"] = SITE_CSS; files["assets/js/app.js"] = SITE_JS; files["assets/js/manifest.js"] = "window.MANIFEST=" + JSON.stringify(manifest) + ";"; files["manifest.json"] = JSON.stringify(manifest, null, 2); return files; }
+  return siteIndexHtml(manifest, true);
+}
+
+// ---------- ZIP (запись STORED, чтение STORED и DEFLATE) ----------
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function makeZip(files) {
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0; const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF, dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  for (const [name, content] of Object.entries(files)) {
+    const data = typeof content === "string" ? enc.encode(content) : new Uint8Array(await content.arrayBuffer()); const nameB = enc.encode(name); const crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30)); lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nameB.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nameB, data);
+    const ch = new DataView(new ArrayBuffer(46)); ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, nameB.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nameB); offset += 30 + nameB.length + data.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.length, 0); const end = new DataView(new ArrayBuffer(22)); end.setUint32(0, 0x06054b50, true); end.setUint16(8, Object.keys(files).length, true); end.setUint16(10, Object.keys(files).length, true); end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+}
+async function readZip(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer()); const dv = new DataView(buf.buffer); const dec = new TextDecoder(); const out = {};
+  let e = buf.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--; if (e < 0) throw new Error("это не zip-архив");
+  const count = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error("повреждён каталог архива");
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(buf.subarray(p + 46, p + 46 + nlen)); const lnlen = dv.getUint16(lho + 26, true), lelen = dv.getUint16(lho + 28, true); const start = lho + 30 + lnlen + lelen; const data = buf.subarray(start, start + csize);
+    if (!name.endsWith("/")) {
+      if (method === 0) out[name] = new Blob([data]);
+      else if (method === 8) { if (!("DecompressionStream" in window)) throw new Error("браузер не умеет распаковывать deflate"); out[name] = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).blob(); }
+      else throw new Error("неподдерживаемый метод сжатия " + method);
+    }
+    p += 46 + nlen + elen + clen;
+  }
+  return out;
+}
+
+// ---------- выгрузка ----------
+async function deliver(blob, fname) {
+  if (navigator.canShare && typeof File !== "undefined") { const file = new File([blob], fname, { type: blob.type }); if (navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === "AbortError") return; } } }
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+const safeName = (s) => (s || "инструкция").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+function checkReady() { if (!P.nodes.length) { toast("Сначала создайте хотя бы один раздел", true); return false; } return true; }
+async function buildZip() { if (!checkReady()) return; try { toast("Сборка…"); const files = await compile("files"); const zip = await makeZip(files); await deliver(zip, safeName(P.title) + " — сайт.zip"); toast(`Собрано: ${Object.keys(files).length} файлов. Распакуйте и откройте index.html`); } catch (e) { toast("Сборка: " + (e.message || e), true); } }
+async function buildSingle() { if (!checkReady()) return; try { toast("Сборка одного файла…"); const html = await compile("inline"); await deliver(new Blob([html], { type: "text/html" }), safeName(P.title) + ".html"); toast("Готов один файл: откройте его в браузере"); } catch (e) { toast("Сборка: " + (e.message || e), true); } }
+async function saveProjectZip() {
+  try { toast("Сохраняю проект…"); const files = {}; const imgs = {};
+    for (const [id, r] of IMG) { const ext = (r.blob.type.split("/")[1] || "bin").replace("jpeg", "jpg"); const path = `images/${id}.${ext}`; files[path] = r.blob; imgs[id] = { path, name: r.name, w: r.w, h: r.h, hash: r.hash }; }
+    files["project.json"] = JSON.stringify({ app: "kit-instrukcii", version: 1, saved: new Date().toISOString(), title: P.title, nodes: P.nodes, pool: P.pool, images: imgs }, null, 2);
+    await deliver(await makeZip(files), safeName(P.title) + ".instr.zip"); toast("Проект сохранён"); } catch (e) { toast("Сохранение: " + (e.message || e), true); }
+}
+async function openProject(file) {
+  try {
+    toast("Открываю проект…"); let manifest, files = {};
+    if (/\.json$/i.test(file.name)) manifest = JSON.parse(await file.text()); else { files = await readZip(file); const pj = files["project.json"]; if (!pj) throw new Error("в архиве нет project.json"); manifest = JSON.parse(await pj.text()); }
+    if (manifest.app !== "kit-instrukcii") throw new Error("это не проект Редактора инструкций");
+    if ((P.nodes.length || IMG.size) && !await confirmDlg("Заменить текущий проект?", "Текущий проект в этом браузере будет заменён открываемым. Несохранённые изменения пропадут.")) return;
+    await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear();
+    const idMap = {};
+    for (const [oldId, meta] of Object.entries(manifest.images || {})) { const blob = files[meta.path]; if (!blob) continue; try { const { im, url } = await decode(blob); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const id = uid(); idMap[oldId] = id; const rec = { blob: new File([blob], meta.name || oldId, { type: blob.type || "image/jpeg" }), thumb, w: im.naturalWidth, h: im.naturalHeight, name: meta.name || oldId, hash: meta.hash || await sha256(await blob.arrayBuffer()), size: blob.size }; await imgPut(id, rec); attach(id, rec); } catch (e) { /* пропускаем битые */ } }
+    P = { version: 1, title: manifest.title || "Инструкция", nodes: manifest.nodes || [], pool: (manifest.pool || []).map(i => idMap[i]).filter(Boolean) };
+    walk(P.nodes, n => { n.images = (n.images || []).map(i => idMap[i]).filter(Boolean); n.children ||= []; });
+    history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); selId = P.nodes[0]?.id || null; renderAll(); save(true); toast(`Проект открыт: ${flat().length} узлов, ${IMG.size} изображений`);
+  } catch (e) { toast("Открытие: " + (e.message || e), true); }
+}
+$("fileProject").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) openProject(f); });
+async function resetAll() { const v = await ask("Новый проект", "Текущий проект в этом браузере будет удалён. Сохраните его перед этим («Проект → Сохранить»). Для подтверждения введите «удалить».", ""); if (v == null || v.trim().toLowerCase() !== "удалить") return; await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear(); P = newProject(); selId = null; poolSel.clear(); history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); renderAll(); save(true); toast("Создан пустой проект"); }
+async function downloadSelf() { try { if (location.protocol === "file:") { toast("Файл уже у вас: скопируйте его из папки или нажмите Ctrl+S", true); return; } const r = await fetch(location.href, { cache: "no-store" }); await deliver(new Blob([await r.text()], { type: "text/html" }), "Редактор инструкций.html"); } catch (e) { toast("Не удалось: " + (e.message || e), true); } }
+
+$("bBuild").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 300, r.bottom + 6, [
+  { h: "Собрать инструкцию" },
+  { t: "Сайт (zip: index.html + assets)", f: buildZip },
+  { t: "Один файл HTML (картинки внутри)", f: buildSingle },
+]); });
+$("bProject").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 300, r.bottom + 6, [
+  { h: "Проект" },
+  { t: "Сохранить проект (.instr.zip)", k: "Ctrl+S", f: saveProjectZip },
+  { t: "Открыть проект…", f: () => $("fileProject").click() },
+  "-",
+  { t: "Скачать «Редактор» как файл (для коллеги)", f: downloadSelf },
+  "-",
+  { t: "Новый проект (удалить текущий)", danger: true, f: resetAll },
+]); });
+
+// ---------- предпросмотр ----------
+async function showPreview() { if (!checkReady()) return; $("preview").classList.add("show"); await refreshPreview(); }
+let pvUrl = null;
+async function refreshPreview() { try { const html = await compile("preview"); if (pvUrl) URL.revokeObjectURL(pvUrl); pvUrl = URL.createObjectURL(new Blob([html], { type: "text/html" })); $("pvFrame").src = pvUrl; } catch (e) { toast("Предпросмотр: " + (e.message || e), true); } } // blob-адрес, а не srcdoc: внутри работает навигация по #/раздел
+$("bPreview").addEventListener("click", showPreview); $("pvRefresh").addEventListener("click", refreshPreview); $("pvClose").addEventListener("click", () => $("preview").classList.remove("show"));
+$("pvDesk").addEventListener("click", () => { $("preview").classList.remove("mobile"); $("pvDesk").classList.add("on"); $("pvMob").classList.remove("on"); });
+$("pvMob").addEventListener("click", () => { $("preview").classList.add("mobile"); $("pvMob").classList.add("on"); $("pvDesk").classList.remove("on"); });
+$("bUndo").addEventListener("click", undo); $("bRedo").addEventListener("click", redo);
+
+// ---------- запуск ----------
+(async function init() {
+  try {
+    const saved = await kvGet("project"); P = saved && saved.nodes ? saved : newProject(); P.pool ||= []; walk(P.nodes, n => { n.children ||= []; n.images ||= []; });
+    const all = await imgAll(); for (const [id, rec] of all) attach(id, rec);
+    const known = new Set(IMG.keys()); P.pool = P.pool.filter(id => known.has(id)); walk(P.nodes, n => n.images = n.images.filter(id => known.has(id)));
+  } catch (e) { P = newProject(); toast("Хранилище недоступно, изменения не сохранятся: " + (e.message || e), true); }
+  lastSnap = snapshot(); updateHistoryButtons(); renderAll();
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+})();
+</script>
+</body>
+</html>
