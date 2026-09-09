@@ -107,6 +107,19 @@
   .seg button { border: none; background: transparent; padding: 6px 12px; cursor: pointer; color: var(--muted); font-weight: 600; }
   .seg button.on { background: var(--accent); color: #fff; }
   input[type=file] { display: none; }
+  #start { position: fixed; inset: 0; z-index: 70; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #start.show { display: flex; }
+  #start .box { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 30px 34px; width: min(640px, 100%); box-shadow: 0 20px 60px rgba(27,42,46,.15); }
+  #start h1 { font-family: Georgia, serif; font-size: 26px; margin: 0 0 6px; }
+  #start p { color: var(--muted); margin: 0 0 18px; line-height: 1.5; }
+  #start .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  #start .recent { border-top: 1px solid var(--line); padding-top: 12px; }
+  #start .recent h4 { margin: 0 0 8px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  #start .recent a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+  #start .recent a:hover { background: var(--accent-soft); }
+  #start .recent .none { color: var(--muted); font-size: 13px; }
+  #pdir { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  #pdir:empty { display: none; }
   body.dropping::after { content: "Отпустите — файлы будут добавлены в пул изображений"; position: fixed; inset: 8px; border: 3px dashed var(--accent); border-radius: 14px; background: rgba(227,240,237,.85); z-index: 100; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; color: var(--accent-dark); pointer-events: none; }
   @media (max-width: 1000px) { main { grid-template-columns: 240px 1fr 220px; } .pool { grid-template-columns: 1fr; } }
 </style>
@@ -115,6 +128,7 @@
 <header>
   <div class="brand"><span class="eyebrow">КИТ · инструмент</span><span class="name">Редактор инструкций</span></div>
   <input id="ptitle" type="text" placeholder="Название инструкции" title="Название инструкции">
+  <span id="pdir" title="Открыть папку проекта"></span>
   <div class="spacer"></div>
   <button class="btn quiet sm" id="bUndo" title="Отменить (Ctrl+Z)">↶</button>
   <button class="btn quiet sm" id="bRedo" title="Повторить (Ctrl+Shift+Z)">↷</button>
@@ -158,6 +172,12 @@
   <div class="stage"><iframe id="pvFrame" title="Предпросмотр инструкции"></iframe></div>
 </div>
 
+<div id="start"><div class="box">
+  <h1>Редактор инструкций</h1>
+  <p>Проект хранится в папке на диске: <span class="mono">project.json</span>, <span class="mono">images/</span>, <span class="mono">thumbs/</span>. Все изменения сохраняются в неё автоматически.</p>
+  <div class="actions"><button class="btn primary" id="stNew">Создать проект…</button><button class="btn" id="stOpen">Открыть проект…</button><button class="btn quiet" id="stZip">Импорт из .instr.zip…</button></div>
+  <div class="recent"><h4>Недавние проекты</h4><div id="stRecent"><span class="none">Пока нет</span></div></div>
+</div></div>
 <div id="menu"></div>
 <div id="status"></div>
 <div id="dlg"><div class="box"><h3 id="dlgTitle"></h3><p id="dlgText"></p><input type="text" id="dlgInput" autocomplete="off"><select id="dlgSelect"></select><div class="row"><button class="btn quiet" id="dlgCancel">Отмена</button><button class="btn primary" id="dlgOk">Готово</button></div></div></div>
@@ -186,7 +206,7 @@ let selId = null;             // выбранный узел
 let poolSel = new Set();      // выбранные в пуле
 const history = { undo: [], redo: [] };
 
-function newProject() { return { version: 1, title: "Инструкция по сборке", nodes: [], pool: [] }; }
+function newProject() { return { version: 1, title: "Инструкция по сборке", nodes: [], pool: [], images: {} }; }
 function node(type, title) { const n = { id: uid(), type, title: title || (type === "section" ? "Новый раздел" : "Новый шаг"), slug: "", text: "", warning: false, images: [], children: [] }; n.slug = slugify(n.title, n.id); return n; }
 function walk(nodes, fn, depth = 0, parent = null) { for (const n of nodes) { fn(n, depth, parent); if (n.children.length) walk(n.children, fn, depth + 1, n); } }
 function flat() { const out = []; walk(P.nodes, (n, d, p) => out.push({ n, d, p })); return out; }
@@ -207,7 +227,24 @@ function numbering() { // «1», «1.2», «1.2.3»
   const map = {}; const rec = (nodes, prefix) => nodes.forEach((n, i) => { const num = prefix ? prefix + "." + (i + 1) : String(i + 1); map[n.id] = num; rec(n.children, num); }); rec(P.nodes, ""); return map;
 }
 
-// ---------- IndexedDB ----------
+// ---------- хранилище: папка проекта (десктоп) или IndexedDB (браузер) ----------
+const DESKTOP = !!window.desktop; let projectDir = null;
+const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", bmp: "image/bmp", svg: "image/svg+xml" };
+function extOf(blob, name) { const t = ((blob && blob.type) || "").split("/")[1] || ""; const e = t.replace("jpeg", "jpg").replace("svg+xml", "svg") || (String(name || "").match(/\.([a-z0-9]+)$/i) || [])[1] || "bin"; return e.toLowerCase(); }
+// rec: { blob, thumb, name, w, h, hash, size } → в IMG кладём { name, w, h, hash, size, ext, url, thumbUrl, blob?, thumb? }
+async function storePut(id, rec) {
+  const ext = extOf(rec.blob, rec.name); const meta = { name: rec.name, w: rec.w, h: rec.h, hash: rec.hash, size: rec.size, ext };
+  const old = IMG.get(id); if (old && !DESKTOP) { URL.revokeObjectURL(old.url); URL.revokeObjectURL(old.thumbUrl); }
+  let out;
+  if (DESKTOP) { await desktop.writeImage(id, ext, new Uint8Array(await rec.blob.arrayBuffer())); await desktop.writeThumb(id, new Uint8Array(await rec.thumb.arrayBuffer())); out = { ...meta, id, url: `instr://img/${id}.${ext}?v=${rec.hash.slice(0, 8)}`, thumbUrl: `instr://thumb/${id}.jpg?v=${rec.hash.slice(0, 8)}` }; }
+  else { await imgPut(id, { blob: rec.blob, thumb: rec.thumb, ...meta }); out = { ...meta, id, blob: rec.blob, thumb: rec.thumb, url: URL.createObjectURL(rec.blob), thumbUrl: URL.createObjectURL(rec.thumb) }; }
+  IMG.set(id, out); (P.images ||= {})[id] = meta; return out;
+}
+async function storeDel(id) { const r = IMG.get(id); if (!r) return; if (DESKTOP) await desktop.deleteImage(id, r.ext).catch(() => {}); else { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); await imgDel(id).catch(() => {}); } IMG.delete(id); if (P.images) delete P.images[id]; }
+async function getBlob(rec) { if (rec.blob) return rec.blob; const bytes = await desktop.readImage(rec.id, rec.ext); return new Blob([bytes], { type: MIME[rec.ext] || "application/octet-stream" }); }
+function attachWeb(id, rec) { const ext = rec.ext || extOf(rec.blob, rec.name); IMG.set(id, { ...rec, id, ext, url: URL.createObjectURL(rec.blob), thumbUrl: URL.createObjectURL(rec.thumb) }); }
+
+// ---------- IndexedDB (браузерный режим) ----------
 const DB_NAME = "kit_instrukcii", DB_VER = 1; let dbp = null;
 function openDB() { return dbp ||= new Promise((res, rej) => { const r = indexedDB.open(DB_NAME, DB_VER); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains("kv")) d.createObjectStore("kv"); if (!d.objectStoreNames.contains("images")) d.createObjectStore("images"); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 async function tx(store, mode, fn) { const d = await openDB(); return new Promise((res, rej) => { const t = d.transaction(store, mode); const r = fn(t.objectStore(t.objectStoreNames[0])); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); }
@@ -218,7 +255,7 @@ const imgDel = (id) => tx("images", "readwrite", s => s.delete(id));
 async function imgAll() { const d = await openDB(); return new Promise((res, rej) => { const out = new Map(); const c = d.transaction("images").objectStore("images").openCursor(); c.onsuccess = () => { const cur = c.result; if (cur) { out.set(cur.key, cur.value); cur.continue(); } else res(out); }; c.onerror = () => rej(c.error); }); }
 async function dbClear() { const d = await openDB(); return new Promise((res, rej) => { const t = d.transaction(["kv", "images"], "readwrite"); t.objectStore("kv").clear(); t.objectStore("images").clear(); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
 let saveTimer = null;
-function flush() { clearTimeout(saveTimer); saveTimer = null; return kvSet("project", P).catch(e => toast("Не удалось сохранить: " + e.message, true)); }
+function flush() { clearTimeout(saveTimer); saveTimer = null; if (DESKTOP) { if (!projectDir) return Promise.resolve(); return desktop.writeProject(JSON.stringify({ app: "kit-instrukcii", version: 1, saved: new Date().toISOString(), title: P.title, nodes: P.nodes, pool: P.pool, images: P.images || {} }, null, 2)).catch(e => toast("Не удалось сохранить project.json: " + e.message, true)); } return kvSet("project", P).catch(e => toast("Не удалось сохранить: " + e.message, true)); }
 function save(now) { if (now) return flush(); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 300); }
 addEventListener("pagehide", () => { if (saveTimer) flush(); });
 
@@ -235,7 +272,6 @@ function updateHistoryButtons() { $("bUndo").disabled = !history.undo.length; $(
 async function sha256(buf) { const h = await crypto.subtle.digest("SHA-256", buf); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join(""); }
 function decode(blob) { return new Promise((res, rej) => { const url = URL.createObjectURL(blob); const im = new Image(); im.onload = () => res({ im, url }); im.onerror = () => { URL.revokeObjectURL(url); rej(new Error("файл не читается как изображение")); }; im.src = url; }); }
 async function makeThumb(im, max = 320) { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k)); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); return new Promise(r => c.toBlob(r, "image/jpeg", 0.82)); }
-function attach(id, rec) { rec.url = URL.createObjectURL(rec.blob); rec.thumbUrl = URL.createObjectURL(rec.thumb); IMG.set(id, rec); }
 async function importFiles(fileList) {
   const files = Array.from(fileList || []).filter(f => f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name));
   if (!files.length) { toast("Среди файлов нет изображений", true); return; }
@@ -249,7 +285,7 @@ async function importFiles(fileList) {
       const { im, url } = await decode(f); URL.revokeObjectURL(url);
       const thumb = await makeThumb(im); const id = uid();
       const rec = { blob: f, thumb, w: im.naturalWidth, h: im.naturalHeight, name: f.name, hash, size: f.size };
-      await imgPut(id, rec); attach(id, rec); P.pool.push(id); hashes.add(hash); added++;
+      await storePut(id, rec); P.pool.push(id); hashes.add(hash); added++;
     } catch (e) { broken++; }
   }
   const parts = [`Добавлено: ${added}`]; if (dup) parts.push(`дубликатов пропущено: ${dup}`); if (broken) parts.push(`не читаются: ${broken}`);
@@ -277,7 +313,7 @@ async function filesFromDataTransfer(dt) {
 document.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); document.body.classList.add("dropping"); } });
 document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
 document.addEventListener("drop", async e => { document.body.classList.remove("dropping"); if (e.dataTransfer?.files?.length) { e.preventDefault(); if (!e.target.closest(".strip, .node")) importFiles(await filesFromDataTransfer(e.dataTransfer)); } });
-async function gcImages() { const used = usedImages(); for (const id of [...IMG.keys()]) if (!used.has(id) && !P.pool.includes(id)) { const r = IMG.get(id); URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); IMG.delete(id); await imgDel(id).catch(() => {}); } }
+async function gcImages() { const used = usedImages(); for (const id of [...IMG.keys()]) if (!used.has(id) && !P.pool.includes(id)) await storeDel(id); }
 
 // ---------- дерево ----------
 function renderTree() {
@@ -367,8 +403,9 @@ function thumbEl(id, opts = {}) {
 let replaceTarget = null;
 $("fileReplace").addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; const id = replaceTarget; replaceTarget = null; if (!f || !id || !IMG.has(id)) return;
-  try { const buf = await f.arrayBuffer(); const { im, url } = await decode(f); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const old = IMG.get(id); URL.revokeObjectURL(old.url); URL.revokeObjectURL(old.thumbUrl);
-    const rec = { blob: f, thumb, w: im.naturalWidth, h: im.naturalHeight, name: f.name, hash: await sha256(buf), size: f.size }; await imgPut(id, rec); attach(id, rec); renderAll(); toast("Изображение заменено: " + f.name); }
+  try { const buf = await f.arrayBuffer(); const { im, url } = await decode(f); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const old = IMG.get(id);
+    if (DESKTOP && old && old.ext !== extOf(f, f.name)) await desktop.deleteImage(id, old.ext).catch(() => {});
+    await storePut(id, { blob: f, thumb, w: im.naturalWidth, h: im.naturalHeight, name: f.name, hash: await sha256(buf), size: f.size }); renderAll(); save(true); toast("Изображение заменено: " + f.name); }
   catch (err) { toast("Замена: " + (err.message || err), true); }
 });
 async function removeImageAnywhere(id) { const r = IMG.get(id); if (!await confirmDlg("Удалить изображение?", `${r.name} будет удалено из проекта и из шагов.`)) return; walk(P.nodes, n => { const i = n.images.indexOf(id); if (i >= 0) n.images.splice(i, 1); }); const pi = P.pool.indexOf(id); if (pi >= 0) P.pool.splice(pi, 1); poolSel.delete(id); commit(); await gcImages(); renderAll(); save(true); }
@@ -430,14 +467,14 @@ function renderCenter() {
 }
 async function importThenAssign(files, nodeId) { const before = new Set(P.pool); await importFiles(files); const fresh = P.pool.filter(id => !before.has(id)); if (fresh.length) assignImages(nodeId, fresh); }
 function renderAll() { renderTree(); renderCenter(); renderPool(); $("ptitle").value = P.title; }
-$("ptitle").addEventListener("change", () => { P.title = $("ptitle").value.trim() || "Инструкция"; commit(); save(true); });
+$("ptitle").addEventListener("change", () => { P.title = $("ptitle").value.trim() || "Инструкция"; commit(); save(true); if (DESKTOP) desktop.setTitle(P.title + (projectDir ? " · " + projectDir : "")); });
 
 // ---------- клавиатура ----------
 document.addEventListener("keydown", e => {
   const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName); const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === "z") { if (editing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
-  if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveProjectZip(); return; }
+  if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); if (DESKTOP) { flush().then(() => toast("Проект сохраняется в папку автоматически: " + (projectDir || "папка не выбрана"))); } else saveProjectZip(); return; }
   if (editing) return;
   if (e.key === "F2" && selId) renameNode(selId);
   else if ((e.key === "Delete" || e.key === "Backspace") && selId) { e.preventDefault(); deleteNode(selId); }
@@ -483,7 +520,7 @@ function textToHtml(text, slugs) {
 
 // ---------- компиляция ----------
 async function resizeTo(rec, maxW) {
-  const { im, url } = await decode(rec.blob); const k = Math.min(1, maxW / im.naturalWidth); const c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+  const { im, url } = await decode(await getBlob(rec)); const k = Math.min(1, maxW / im.naturalWidth); const c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
   c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
   let blob = await new Promise(r => c.toBlob(r, "image/webp", 0.86)); let ext = "webp";
   if (!blob || blob.type !== "image/webp") { blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.86)); ext = "jpg"; } // Safari не кодирует WebP — фолбэк JPEG
@@ -664,16 +701,24 @@ async function readZip(blob) {
 
 // ---------- выгрузка ----------
 async function deliver(blob, fname) {
+  if (DESKTOP) { const ext = (fname.match(/\.([a-z0-9]+)$/i) || [])[1]; const file = await desktop.saveFile(fname, new Uint8Array(await blob.arrayBuffer()), ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : []); if (file) { toast("Сохранено: " + file); desktop.showItem(file); } return; }
   if (navigator.canShare && typeof File !== "undefined") { const file = new File([blob], fname, { type: blob.type }); if (navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === "AbortError") return; } } }
   const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 const safeName = (s) => (s || "инструкция").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 function checkReady() { if (!P.nodes.length) { toast("Сначала создайте хотя бы один раздел", true); return false; } return true; }
+async function buildToDir() {
+  if (!checkReady()) return;
+  try { const dir = await desktop.chooseBuildDir(); if (!dir) return; toast("Сборка…"); const files = await compile("files");
+    const entries = []; for (const [pth, data] of Object.entries(files)) entries.push({ path: pth, data: typeof data === "string" ? data : new Uint8Array(await data.arrayBuffer()) });
+    const n = await desktop.writeBuild(dir, entries); toast(`Собрано: ${n} файлов → ${dir}`); desktop.openPath(dir); }
+  catch (e) { toast("Сборка: " + (e.message || e), true); }
+}
 async function buildZip() { if (!checkReady()) return; try { toast("Сборка…"); const files = await compile("files"); const zip = await makeZip(files); await deliver(zip, safeName(P.title) + " — сайт.zip"); toast(`Собрано: ${Object.keys(files).length} файлов. Распакуйте и откройте index.html`); } catch (e) { toast("Сборка: " + (e.message || e), true); } }
 async function buildSingle() { if (!checkReady()) return; try { toast("Сборка одного файла…"); const html = await compile("inline"); await deliver(new Blob([html], { type: "text/html" }), safeName(P.title) + ".html"); toast("Готов один файл: откройте его в браузере"); } catch (e) { toast("Сборка: " + (e.message || e), true); } }
 async function saveProjectZip() {
   try { toast("Сохраняю проект…"); const files = {}; const imgs = {};
-    for (const [id, r] of IMG) { const ext = (r.blob.type.split("/")[1] || "bin").replace("jpeg", "jpg"); const path = `images/${id}.${ext}`; files[path] = r.blob; imgs[id] = { path, name: r.name, w: r.w, h: r.h, hash: r.hash }; }
+    for (const [id, r] of IMG) { const path = `images/${id}.${r.ext}`; files[path] = await getBlob(r); imgs[id] = { path, name: r.name, w: r.w, h: r.h, hash: r.hash, ext: r.ext, size: r.size }; }
     files["project.json"] = JSON.stringify({ app: "kit-instrukcii", version: 1, saved: new Date().toISOString(), title: P.title, nodes: P.nodes, pool: P.pool, images: imgs }, null, 2);
     await deliver(await makeZip(files), safeName(P.title) + ".instr.zip"); toast("Проект сохранён"); } catch (e) { toast("Сохранение: " + (e.message || e), true); }
 }
@@ -682,25 +727,63 @@ async function openProject(file) {
     toast("Открываю проект…"); let manifest, files = {};
     if (/\.json$/i.test(file.name)) manifest = JSON.parse(await file.text()); else { files = await readZip(file); const pj = files["project.json"]; if (!pj) throw new Error("в архиве нет project.json"); manifest = JSON.parse(await pj.text()); }
     if (manifest.app !== "kit-instrukcii") throw new Error("это не проект Редактора инструкций");
-    if ((P.nodes.length || IMG.size) && !await confirmDlg("Заменить текущий проект?", "Текущий проект в этом браузере будет заменён открываемым. Несохранённые изменения пропадут.")) return;
-    await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear();
-    const idMap = {};
-    for (const [oldId, meta] of Object.entries(manifest.images || {})) { const blob = files[meta.path]; if (!blob) continue; try { const { im, url } = await decode(blob); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const id = uid(); idMap[oldId] = id; const rec = { blob: new File([blob], meta.name || oldId, { type: blob.type || "image/jpeg" }), thumb, w: im.naturalWidth, h: im.naturalHeight, name: meta.name || oldId, hash: meta.hash || await sha256(await blob.arrayBuffer()), size: blob.size }; await imgPut(id, rec); attach(id, rec); } catch (e) { /* пропускаем битые */ } }
-    P = { version: 1, title: manifest.title || "Инструкция", nodes: manifest.nodes || [], pool: (manifest.pool || []).map(i => idMap[i]).filter(Boolean) };
-    walk(P.nodes, n => { n.images = (n.images || []).map(i => idMap[i]).filter(Boolean); n.children ||= []; });
-    history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); selId = P.nodes[0]?.id || null; renderAll(); save(true); toast(`Проект открыт: ${flat().length} узлов, ${IMG.size} изображений`);
+    if (DESKTOP) { const r = await desktop.newProject(); if (!r) return; if (r.existed) throw new Error("В выбранной папке уже есть проект. Для импорта нужна пустая папка"); projectDir = r.dir; IMG.clear(); }
+    else { if ((P.nodes.length || IMG.size) && !await confirmDlg("Заменить текущий проект?", "Текущий проект в этом браузере будет заменён открываемым. Несохранённые изменения пропадут.")) return; await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear(); }
+    const idMap = {}; const nodes = manifest.nodes || []; const pool = manifest.pool || [];
+    P = { version: 1, title: manifest.title || "Инструкция", nodes, pool: [], images: {} };
+    for (const [oldId, meta] of Object.entries(manifest.images || {})) { const blob = files[meta.path]; if (!blob) continue; try { const { im, url } = await decode(blob); URL.revokeObjectURL(url); const thumb = await makeThumb(im); const id = uid(); idMap[oldId] = id;
+      await storePut(id, { blob: new File([blob], meta.name || oldId, { type: blob.type || MIME[meta.ext] || "image/jpeg" }), thumb, w: im.naturalWidth, h: im.naturalHeight, name: meta.name || oldId, hash: meta.hash || await sha256(await blob.arrayBuffer()), size: blob.size }); } catch (e) { /* пропускаем битые */ } }
+    P.pool = pool.map(i => idMap[i]).filter(Boolean); walk(P.nodes, n => { n.images = (n.images || []).map(i => idMap[i]).filter(Boolean); n.children ||= []; });
+    history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); selId = P.nodes[0]?.id || null; afterProjectLoaded(); renderAll(); await save(true); toast(`Проект открыт: ${flat().length} узлов, ${IMG.size} изображений`);
   } catch (e) { toast("Открытие: " + (e.message || e), true); }
 }
 $("fileProject").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) openProject(f); });
-async function resetAll() { const v = await ask("Новый проект", "Текущий проект в этом браузере будет удалён. Сохраните его перед этим («Проект → Сохранить»). Для подтверждения введите «удалить».", ""); if (v == null || v.trim().toLowerCase() !== "удалить") return; await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear(); P = newProject(); selId = null; poolSel.clear(); history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); renderAll(); save(true); toast("Создан пустой проект"); }
+// ---------- десктоп: проект в папке ----------
+function afterProjectLoaded() { $("start").classList.remove("show"); if (DESKTOP) { $("pdir").textContent = projectDir || ""; $("pdir").title = projectDir || ""; desktop.setTitle(P.title + (projectDir ? " · " + projectDir : "")); } }
+function normalizeProject(o) { const p = { version: 1, title: o.title || "Инструкция", nodes: o.nodes || [], pool: o.pool || [], images: o.images || {} }; walk(p.nodes, n => { n.children ||= []; n.images ||= []; }); return p; }
+async function loadDesktopProject(r) {
+  projectDir = r.dir; P = r.project ? normalizeProject(r.project) : newProject(); P.images ||= {}; IMG.clear();
+  const listing = await desktop.listImages(); const have = new Set(listing.images), haveThumb = new Set(listing.thumbs);
+  for (const [id, m] of Object.entries(P.images)) {
+    const file = `${id}.${m.ext}`; if (!have.has(file)) { delete P.images[id]; continue; }
+    const rec = { ...m, id, url: `instr://img/${file}?v=${(m.hash || "").slice(0, 8)}`, thumbUrl: `instr://thumb/${id}.jpg?v=${(m.hash || "").slice(0, 8)}` }; IMG.set(id, rec);
+    if (!haveThumb.has(id + ".jpg")) { try { const { im, url } = await decode(await getBlob(rec)); URL.revokeObjectURL(url); await desktop.writeThumb(id, new Uint8Array(await (await makeThumb(im)).arrayBuffer())); } catch { /* миниатюра появится позже */ } }
+  }
+  const known = new Set(IMG.keys()); P.pool = P.pool.filter(id => known.has(id)); walk(P.nodes, n => n.images = n.images.filter(id => known.has(id)));
+  history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); selId = P.nodes[0]?.id || null; poolSel.clear(); afterProjectLoaded(); renderAll(); await save(true);
+  toast(r.project ? `Проект открыт: ${flat().length} узлов, ${IMG.size} изображений` : "Создан новый проект в " + projectDir);
+}
+async function desktopNew() { try { const r = await desktop.newProject(); if (!r) return; if (r.existed && !await confirmDlg("В папке уже есть проект", "Открыть его?")) return; await loadDesktopProject(r); } catch (e) { toast(e.message || String(e), true); } }
+async function desktopOpen() { try { const r = await desktop.openProject(); if (!r) return; await loadDesktopProject(r); } catch (e) { toast(e.message || String(e), true); } }
+async function desktopOpenPath(dir) { try { await loadDesktopProject(await desktop.openProjectPath(dir)); } catch (e) { toast(e.message || String(e), true); showStart(); } }
+async function desktopSaveAs() { try { const r = await desktop.saveAs(); if (!r) return; projectDir = r.dir; afterProjectLoaded(); toast("Копия проекта сохранена: " + r.dir); } catch (e) { toast(e.message || String(e), true); } }
+async function showStart() { $("start").classList.add("show"); try { const st = await desktop.state(); const box = $("stRecent"); box.innerHTML = ""; if (!st.recent.length) box.innerHTML = '<span class="none">Пока нет</span>'; st.recent.forEach(d => { const a = document.createElement("a"); a.href = "#"; a.textContent = d; a.addEventListener("click", e => { e.preventDefault(); desktopOpenPath(d); }); box.appendChild(a); }); } catch { /* нет списка */ } }
+if (DESKTOP) {
+  $("stNew").addEventListener("click", desktopNew); $("stOpen").addEventListener("click", desktopOpen); $("stZip").addEventListener("click", () => $("fileProject").click());
+  $("pdir").addEventListener("click", () => projectDir && desktop.openPath(projectDir));
+  desktop.onMenu((cmd, arg) => { ({ new: desktopNew, open: desktopOpen, openPath: () => desktopOpenPath(arg), importZip: () => $("fileProject").click(), saveAs: desktopSaveAs, exportZip: saveProjectZip,
+    importImages: () => $("fileImages").click(), importFolder: () => $("fileFolder").click(), preview: showPreview, buildDir: buildToDir, buildZip, buildSingle, undo, redo })[cmd]?.(); });
+}
+async function resetAll() {
+  if (DESKTOP) return desktopNew(); const v = await ask("Новый проект", "Текущий проект в этом браузере будет удалён. Сохраните его перед этим («Проект → Сохранить»). Для подтверждения введите «удалить».", ""); if (v == null || v.trim().toLowerCase() !== "удалить") return; await dbClear(); for (const r of IMG.values()) { URL.revokeObjectURL(r.url); URL.revokeObjectURL(r.thumbUrl); } IMG.clear(); P = newProject(); P.images = {}; selId = null; poolSel.clear(); history.undo.length = history.redo.length = 0; lastSnap = snapshot(); updateHistoryButtons(); renderAll(); save(true); toast("Создан пустой проект"); }
 async function downloadSelf() { try { if (location.protocol === "file:") { toast("Файл уже у вас: скопируйте его из папки или нажмите Ctrl+S", true); return; } const r = await fetch(location.href, { cache: "no-store" }); await deliver(new Blob([await r.text()], { type: "text/html" }), "Редактор инструкций.html"); } catch (e) { toast("Не удалось: " + (e.message || e), true); } }
 
 $("bBuild").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 300, r.bottom + 6, [
   { h: "Собрать инструкцию" },
-  { t: "Сайт (zip: index.html + assets)", f: buildZip },
-  { t: "Один файл HTML (картинки внутри)", f: buildSingle },
-]); });
-$("bProject").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 300, r.bottom + 6, [
+  DESKTOP ? { t: "Сайт в папку… (index.html + assets)", k: "Ctrl+B", f: buildToDir } : null,
+  { t: DESKTOP ? "Сайт в zip…" : "Сайт (zip: index.html + assets)", f: buildZip },
+  { t: DESKTOP ? "Один файл HTML…" : "Один файл HTML (картинки внутри)", f: buildSingle },
+].filter(Boolean)); });
+$("bProject").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); openMenu(r.right - 300, r.bottom + 6, DESKTOP ? [
+  { h: "Проект · " + (projectDir || "не открыт") },
+  { t: "Новый проект…", k: "Ctrl+N", f: desktopNew },
+  { t: "Открыть проект…", k: "Ctrl+O", f: desktopOpen },
+  { t: "Импорт проекта из .instr.zip…", f: () => $("fileProject").click() },
+  "-",
+  { t: "Открыть папку проекта", disabled: !projectDir, f: () => desktop.openPath(projectDir) },
+  { t: "Сохранить копию в другую папку…", disabled: !projectDir, f: desktopSaveAs },
+  { t: "Экспорт проекта в .instr.zip…", disabled: !projectDir, f: saveProjectZip },
+] : [
   { h: "Проект" },
   { t: "Сохранить проект (.instr.zip)", k: "Ctrl+S", f: saveProjectZip },
   { t: "Открыть проект…", f: () => $("fileProject").click() },
@@ -721,9 +804,14 @@ $("bUndo").addEventListener("click", undo); $("bRedo").addEventListener("click",
 
 // ---------- запуск ----------
 (async function init() {
+  if (DESKTOP) {
+    P = newProject(); lastSnap = snapshot(); updateHistoryButtons(); renderAll();
+    try { const st = await desktop.state(); if (st.projectDir) await desktopOpenPath(st.projectDir); else showStart(); } catch (e) { toast("Хранилище недоступно: " + (e.message || e), true); showStart(); }
+    return;
+  }
   try {
-    const saved = await kvGet("project"); P = saved && saved.nodes ? saved : newProject(); P.pool ||= []; walk(P.nodes, n => { n.children ||= []; n.images ||= []; });
-    const all = await imgAll(); for (const [id, rec] of all) attach(id, rec);
+    const saved = await kvGet("project"); P = saved && saved.nodes ? saved : newProject(); P.pool ||= []; P.images ||= {}; walk(P.nodes, n => { n.children ||= []; n.images ||= []; });
+    const all = await imgAll(); for (const [id, rec] of all) { attachWeb(id, rec); const r = IMG.get(id); P.images[id] = { name: r.name, w: r.w, h: r.h, hash: r.hash, size: r.size, ext: r.ext }; }
     const known = new Set(IMG.keys()); P.pool = P.pool.filter(id => known.has(id)); walk(P.nodes, n => n.images = n.images.filter(id => known.has(id)));
   } catch (e) { P = newProject(); toast("Хранилище недоступно, изменения не сохранятся: " + (e.message || e), true); }
   lastSnap = snapshot(); updateHistoryButtons(); renderAll();
