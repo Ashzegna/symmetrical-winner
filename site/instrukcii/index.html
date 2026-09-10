@@ -447,7 +447,7 @@ function renderCenter() {
     <div class="card">
       <h3>Изображения <span style="color:var(--muted);font-size:14px;font-family:inherit;font-weight:400">${n.images.length ? `· ${n.images.length}` : ""}</span></h3>
       <div class="strip" id="strip">${n.images.length ? "" : '<div class="ph">Перетащите сюда изображения из пула или выберите их в пуле и нажмите «В выбранный шаг». Порядок меняется перетаскиванием.</div>'}</div>
-      <div class="hintline">Первое изображение показывается крупно, остальные — лентой под ним. Двойной щелчок по миниатюре открывает оригинал.</div>
+      <div class="hintline">Одно изображение показывается во всю ширину, несколько — одинаковыми плитками в два столбца (на телефоне в один). Двойной щелчок по миниатюре открывает оригинал.</div>
     </div>`;
   $("fTitle").value = n.title; $("fSlug").value = n.slug; $("fText").value = n.text || ""; $("fWarn").checked = !!n.warning;
   let editTimer = null; const onEdit = () => { n.title = $("fTitle").value.trim() || n.title; n.text = $("fText").value; n.warning = $("fWarn").checked; renderTree(); save(); };
@@ -577,7 +577,8 @@ h2.title{font-family:Georgia,"Times New Roman",serif;font-size:30px;margin:0 0 6
 .text{margin:14px 0 20px}.text p{margin:0 0 10px}.text ul{margin:0 0 10px 20px}.xref-missing{color:#B3552F;border-bottom:1px dashed}
 figure{margin:0 0 14px}figure img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:zoom-in}
 figure figcaption{font-size:12.5px;color:var(--muted);margin-top:6px}
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.gallery img{aspect-ratio:4/3;object-fit:cover}
+.gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.gallery figure{margin:0}.gallery img{aspect-ratio:4/3;object-fit:contain;background:#fff}
+@media (max-width:600px){.gallery{grid-template-columns:1fr}}
 .toc-inline{display:grid;gap:8px;margin:16px 0}.toc-inline a{display:flex;gap:10px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--ink)}.toc-inline a:hover{border-color:var(--accent)}.toc-inline .n{font-family:ui-monospace,Menlo,monospace;color:var(--muted);min-width:34px}
 .pager{display:flex;justify-content:space-between;gap:12px;margin-top:30px;padding-top:18px;border-top:1px solid var(--line)}
 .pager a{flex:1;max-width:48%;display:block;padding:12px 14px;border:1.5px solid var(--accent);border-radius:10px;text-decoration:none;color:var(--accent);font-weight:600}.pager a.next{text-align:right;background:var(--accent);color:#fff}.pager a small{display:block;font-weight:400;font-size:12px;opacity:.75}
@@ -606,8 +607,9 @@ function render(){var s=cur();side.classList.remove('open');side.querySelectorAl
  if(p.stepIndex){prog.textContent='Шаг '+p.stepIndex+' из '+M.stepsTotal;bar.style.width=(100*p.stepIndex/M.stepsTotal)+'%'}else{prog.textContent=p.type==='section'?'Раздел '+p.num:'';bar.style.width=(100*(i+1)/order.length)+'%'}
  var crumbs='<div class="crumbs"><a href="#/">Оглавление</a>'+p.crumbs.map(function(c){return ' › <a href="#/'+c.slug+'">'+esc(c.title)+'</a>'}).join('')+'</div>';
  var ss=function(im){return im.srcset?' srcset="'+im.srcset+'" sizes="(max-width: 860px) 100vw, 900px"':''};
- var imgs='';if(p.images.length){var f=p.images[0];imgs+='<figure><img src="'+f.src+'"'+ss(f)+' data-full="'+(f.full||f.src)+'" data-i="0" alt="'+esc(f.alt)+'" width="'+f.w+'" height="'+f.h+'" loading="lazy"></figure>';
-  if(p.images.length>1)imgs+='<div class="gallery">'+p.images.slice(1).map(function(im,k){return '<figure><img src="'+im.src+'" data-full="'+(im.full||im.src)+'" data-i="'+(k+1)+'" alt="'+esc(im.alt)+'" loading="lazy"></figure>'}).join('')+'</div>'}
+ /* одна картинка — во всю ширину; несколько — одинаковые плитки в два столбца */
+ var imgs='';if(p.images.length===1){var f=p.images[0];imgs='<figure><img src="'+f.src+'"'+ss(f)+' data-full="'+(f.full||f.src)+'" data-i="0" alt="'+esc(f.alt)+'" width="'+f.w+'" height="'+f.h+'" loading="lazy"></figure>'}
+ else if(p.images.length>1){imgs='<div class="gallery">'+p.images.map(function(im,k){return '<figure><img src="'+im.src+'"'+(im.srcset?' srcset="'+im.srcset+'" sizes="(max-width: 600px) 100vw, 450px"':'')+' data-full="'+(im.full||im.src)+'" data-i="'+k+'" alt="'+esc(im.alt)+'" loading="lazy"></figure>'}).join('')+'</div>'}
  var kids=p.children.length?'<div class="toc-inline">'+p.children.map(function(cs){var c=byslug[cs];return '<a href="#/'+c.slug+'"><span class="n">'+esc(c.num)+'</span><span>'+esc(c.title)+'</span></a>'}).join('')+'</div>':'';
  main.innerHTML=crumbs+'<div class="kicker">'+(p.type==='step'?'Шаг '+esc(p.num):'Раздел '+esc(p.num))+'</div><h2 class="title">'+esc(p.title)+'</h2>'+(p.warning?'<div class="warn">▲ Внимание. Прочитайте пояснение до начала работ.</div>':'')+(p.html?'<div class="text">'+p.html+'</div>':'')+imgs+kids+
   '<div class="pager">'+(prev?'<a class="prev" href="#/'+prev.slug+'">‹ Назад <small>'+esc(prev.title)+'</small></a>':'<a class="prev" href="#/">‹ Оглавление</a>')+(next?'<a class="next" href="#/'+next.slug+'">Дальше › <small>'+esc(next.title)+'</small></a>':'<span class="none"></span>')+'</div>';
